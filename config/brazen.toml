@@ -1,0 +1,74 @@
+# Brazen platform skeleton configuration.
+# This file is intentionally comprehensive so future subsystems can turn into
+# real behavior without renaming the config surface.
+
+[app]
+name = "Brazen"
+tagline = "Capability Browser Platform"
+homepage = "https://example.invalid/brazen"
+
+[window]
+initial_width = 1440.0
+initial_height = 920.0
+min_width = 960.0
+min_height = 640.0
+show_log_panel_on_startup = true
+show_permission_panel_on_startup = false
+
+[logging]
+console_filter = "info,brazen=debug"
+file_filter = "debug,brazen=trace"
+file_name_prefix = "brazen.log"
+ansi = true
+
+[directories]
+# Use "default" to resolve through platform-specific app data directories.
+data_dir = "default"
+logs_dir = "default"
+profiles_dir = "default"
+cache_dir = "default"
+
+[cache]
+metadata_capture = true
+selective_body_capture = true
+archive_replay_mode = false
+max_entry_bytes = 10485760
+third_party_mode = "metadata-only"
+mime_allowlist = [
+  "text/html",
+  "application/json",
+  "text/css",
+  "application/javascript",
+  "image/png",
+]
+
+[permissions]
+default = "ask"
+
+[permissions.capabilities]
+terminal-exec = "deny"
+dom-read = "ask"
+cache-read = "ask"
+tab-inspect = "ask"
+ai-tool-use = "ask"
+
+[automation]
+enabled = false
+bind = "ws://127.0.0.1:7942"
+expose_tab_api = true
+expose_cache_api = false
+
+[extraction]
+article_processing_enabled = false
+ontology_capture_enabled = false
+rss_rehydration_enabled = false
+
+[media]
+default_tts_provider = "none"
+auto_queue_reader_mode = false
+
+[features]
+shell_status_panel = true
+cache_inspector = true
+automation_server = false
+servo_backend = false
