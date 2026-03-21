@@ -478,13 +478,6 @@ impl ServoEngine {
 }
 
 #[cfg(feature = "servo")]
-impl Default for ServoEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(feature = "servo")]
 impl BrowserEngine for ServoEngine {
     fn backend_name(&self) -> &'static str {
         "servo-scaffold"
@@ -612,12 +605,13 @@ impl BrowserEngine for ServoEngine {
             scale = metadata.scale_factor_basis_points,
             "updated render surface metadata"
         );
+        let metadata_clone = metadata.clone();
         self.surface = Some(metadata);
         if let Some(handle) = self.surface_handle.clone() {
             if self.embedder.surface.is_some() {
-                self.embedder.update_surface(metadata);
+                self.embedder.update_surface(metadata_clone);
             } else {
-                self.embedder.attach_surface(handle, metadata);
+                self.embedder.attach_surface(handle, metadata_clone);
             }
         }
     }
@@ -666,7 +660,9 @@ impl BrowserEngine for ServoEngine {
 
     fn handle_clipboard(&mut self, request: ClipboardRequest) {
         tracing::debug!(target: "brazen::engine::servo", ?request, "clipboard request");
-        self.events.push(EngineEvent::ClipboardRequested(request));
+        let request_clone = request.clone();
+        self.events
+            .push(EngineEvent::ClipboardRequested(request_clone));
         self.embedder.handle_clipboard(&request);
     }
 
