@@ -5,6 +5,7 @@ use crate::engine::BrowserEngine;
 pub enum AppCommand {
     NavigateTo(String),
     ReloadActiveTab,
+    StopLoading,
     GoBack,
     GoForward,
     ToggleLogPanel,
@@ -15,6 +16,7 @@ pub enum AppCommand {
 pub enum CommandOutcome {
     NavigationScheduled,
     ReloadScheduled,
+    StopScheduled,
     BackScheduled,
     ForwardScheduled,
     LogPanelVisibility(bool),
@@ -37,6 +39,11 @@ pub fn dispatch_command(
             state.record_event("queued reload for active tab");
             engine.reload();
             CommandOutcome::ReloadScheduled
+        }
+        AppCommand::StopLoading => {
+            state.record_event("queued stop for active tab");
+            engine.stop();
+            CommandOutcome::StopScheduled
         }
         AppCommand::GoBack => {
             state.record_event("queued back navigation");

@@ -27,3 +27,8 @@ uuid = { version = "1.22.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[profile.servo]
+inherits = "release"
+opt-level = 2
+debug = true

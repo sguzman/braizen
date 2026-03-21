@@ -96,6 +96,14 @@ pub struct RenderSurface {
     pub metadata: RenderSurfaceMetadata,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineFrame {
+    pub width: u32,
+    pub height: u32,
+    pub frame_number: u64,
+    pub pixels: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NavigationState {
     pub can_go_back: bool,
@@ -114,6 +122,9 @@ pub enum EngineEvent {
     StatusChanged(EngineStatus),
     NavigationRequested(String),
     NavigationStateUpdated(NavigationState),
+    DevtoolsReady {
+        endpoint: String,
+    },
     ClipboardRequested(ClipboardRequest),
     PopupRequested {
         url: String,
@@ -164,14 +175,18 @@ pub trait BrowserEngine: Send {
     fn active_tab(&self) -> &BrowserTab;
     fn navigate(&mut self, url: &str);
     fn reload(&mut self);
+    fn stop(&mut self);
     fn go_back(&mut self);
     fn go_forward(&mut self);
     fn attach_surface(&mut self, surface: RenderSurfaceHandle);
     fn set_render_surface(&mut self, metadata: RenderSurfaceMetadata);
+    fn render_frame(&mut self) -> Option<EngineFrame>;
     fn set_focus(&mut self, focus: FocusState);
     fn handle_input(&mut self, event: InputEvent);
     fn handle_ime(&mut self, event: ImeEvent);
     fn handle_clipboard(&mut self, request: ClipboardRequest);
+    fn set_verbose_logging(&mut self, enabled: bool);
+    fn configure_devtools(&mut self, enabled: bool, transport: &str);
     fn suspend(&mut self);
     fn resume(&mut self);
     fn shutdown(&mut self);
@@ -191,6 +206,7 @@ pub struct NullEngine {
     surface: Option<RenderSurface>,
     navigation_state: NavigationState,
     focus: FocusState,
+    verbose_logging: bool,
 }
 
 impl NullEngine {
@@ -218,6 +234,7 @@ impl NullEngine {
             surface: None,
             navigation_state,
             focus: FocusState::Unfocused,
+            verbose_logging: false,
         }
     }
 }
@@ -265,6 +282,14 @@ impl BrowserEngine for NullEngine {
     fn reload(&mut self) {
         self.navigation_state.load_progress = 1.0;
         self.navigation_state.document_ready = true;
+        self.events.push(EngineEvent::NavigationStateUpdated(
+            self.navigation_state.clone(),
+        ));
+    }
+
+    fn stop(&mut self) {
+        self.navigation_state.load_progress = 0.0;
+        self.navigation_state.document_ready = false;
         self.events.push(EngineEvent::NavigationStateUpdated(
             self.navigation_state.clone(),
         ));
@@ -321,6 +346,10 @@ impl BrowserEngine for NullEngine {
         }
     }
 
+    fn render_frame(&mut self) -> Option<EngineFrame> {
+        None
+    }
+
     fn set_focus(&mut self, focus: FocusState) {
         self.focus = focus;
     }
@@ -332,6 +361,12 @@ impl BrowserEngine for NullEngine {
     fn handle_clipboard(&mut self, request: ClipboardRequest) {
         self.events.push(EngineEvent::ClipboardRequested(request));
     }
+
+    fn set_verbose_logging(&mut self, enabled: bool) {
+        self.verbose_logging = enabled;
+    }
+
+    fn configure_devtools(&mut self, _enabled: bool, _transport: &str) {}
 
     fn suspend(&mut self) {
         self.status = EngineStatus::Initializing;
@@ -384,6 +419,11 @@ pub struct ServoEngine {
     focus: FocusState,
     surface_handle: Option<RenderSurfaceHandle>,
     embedder: ServoEmbedder,
+    history: Vec<String>,
+    history_index: usize,
+    loading: bool,
+    frame_counter: u64,
+    verbose_logging: bool,
 }
 
 #[cfg(feature = "servo")]
@@ -407,7 +447,12 @@ impl ServoEngine {
         };
 
         let embedder_config = ServoEmbedderConfig::from_engine_config(&config.engine);
-        let embedder = ServoEmbedder::new(embedder_config);
+        let mut embedder = ServoEmbedder::new(embedder_config);
+        let verbose_logging = config.engine.verbose_logging;
+        embedder.set_verbose_logging(verbose_logging);
+        if let Err(error) = embedder.init() {
+            tracing::error!(target: "brazen::engine::servo", %error, "servo embedder init failed");
+        }
 
         Self {
             instance_id: 1,
@@ -423,6 +468,11 @@ impl ServoEngine {
             focus: FocusState::Unfocused,
             surface_handle: None,
             embedder,
+            history: vec!["about:blank".to_string()],
+            history_index: 0,
+            loading: false,
+            frame_counter: 0,
+            verbose_logging,
         }
     }
 }
@@ -455,14 +505,23 @@ impl BrowserEngine for ServoEngine {
     fn navigate(&mut self, url: &str) {
         tracing::info!(target: "brazen::engine::servo", %url, "servo scaffold navigate");
         self.active_tab.current_url = url.to_string();
+        self.embedder.current_url = url.to_string();
         self.navigation_state.url = url.to_string();
         self.navigation_state.redirect_chain = vec![url.to_string()];
-        self.navigation_state.title = "Loading...".to_string();
-        self.navigation_state.load_progress = 0.1;
+        self.navigation_state.title = format!("Loading {url}");
+        self.navigation_state.load_progress = 0.05;
         self.navigation_state.document_ready = false;
         if self.active_tab.current_url != "about:blank" {
             self.navigation_state.can_go_back = true;
         }
+        if self.history_index + 1 < self.history.len() {
+            self.history.truncate(self.history_index + 1);
+        }
+        self.history.push(url.to_string());
+        self.history_index = self.history.len().saturating_sub(1);
+        self.navigation_state.can_go_back = self.history_index > 0;
+        self.navigation_state.can_go_forward = false;
+        self.loading = true;
         self.events
             .push(EngineEvent::NavigationRequested(url.to_string()));
         self.events.push(EngineEvent::NavigationStateUpdated(
@@ -472,8 +531,20 @@ impl BrowserEngine for ServoEngine {
 
     fn reload(&mut self) {
         tracing::info!(target: "brazen::engine::servo", "servo scaffold reload");
-        self.navigation_state.load_progress = 1.0;
-        self.navigation_state.document_ready = true;
+        self.loading = true;
+        self.navigation_state.load_progress = 0.05;
+        self.navigation_state.document_ready = false;
+        self.events.push(EngineEvent::NavigationStateUpdated(
+            self.navigation_state.clone(),
+        ));
+    }
+
+    fn stop(&mut self) {
+        tracing::info!(target: "brazen::engine::servo", "servo scaffold stop");
+        self.loading = false;
+        self.navigation_state.load_progress = 0.0;
+        self.navigation_state.document_ready = false;
+        self.navigation_state.metadata_summary = Some("Load stopped".to_string());
         self.events.push(EngineEvent::NavigationStateUpdated(
             self.navigation_state.clone(),
         ));
@@ -481,9 +552,19 @@ impl BrowserEngine for ServoEngine {
 
     fn go_back(&mut self) {
         tracing::info!(target: "brazen::engine::servo", "servo scaffold go back");
-        if self.navigation_state.can_go_back {
-            self.navigation_state.can_go_forward = true;
+        if self.navigation_state.can_go_back && self.history_index > 0 {
+            self.history_index -= 1;
+            let url = self.history[self.history_index].clone();
+            self.active_tab.current_url = url.clone();
+            self.embedder.current_url = url.clone();
+            self.navigation_state.url = url.clone();
+            self.navigation_state.redirect_chain = vec![url.clone()];
+            self.navigation_state.title = format!("Loading {url}");
+            self.navigation_state.load_progress = 0.05;
             self.navigation_state.document_ready = false;
+            self.navigation_state.can_go_back = self.history_index > 0;
+            self.navigation_state.can_go_forward = self.history_index + 1 < self.history.len();
+            self.loading = true;
             self.events.push(EngineEvent::NavigationStateUpdated(
                 self.navigation_state.clone(),
             ));
@@ -492,8 +573,19 @@ impl BrowserEngine for ServoEngine {
 
     fn go_forward(&mut self) {
         tracing::info!(target: "brazen::engine::servo", "servo scaffold go forward");
-        if self.navigation_state.can_go_forward {
+        if self.navigation_state.can_go_forward && self.history_index + 1 < self.history.len() {
+            self.history_index += 1;
+            let url = self.history[self.history_index].clone();
+            self.active_tab.current_url = url.clone();
+            self.embedder.current_url = url.clone();
+            self.navigation_state.url = url.clone();
+            self.navigation_state.redirect_chain = vec![url.clone()];
+            self.navigation_state.title = format!("Loading {url}");
+            self.navigation_state.load_progress = 0.05;
             self.navigation_state.document_ready = false;
+            self.navigation_state.can_go_back = self.history_index > 0;
+            self.navigation_state.can_go_forward = self.history_index + 1 < self.history.len();
+            self.loading = true;
             self.events.push(EngineEvent::NavigationStateUpdated(
                 self.navigation_state.clone(),
             ));
@@ -502,6 +594,14 @@ impl BrowserEngine for ServoEngine {
 
     fn attach_surface(&mut self, surface: RenderSurfaceHandle) {
         self.surface_handle = Some(surface);
+        if let (Some(handle), Some(metadata)) = (self.surface_handle.clone(), self.surface.clone())
+        {
+            if self.embedder.surface.is_some() {
+                self.embedder.update_surface(metadata);
+            } else {
+                self.embedder.attach_surface(handle, metadata);
+            }
+        }
     }
 
     fn set_render_surface(&mut self, metadata: RenderSurfaceMetadata) {
@@ -513,39 +613,91 @@ impl BrowserEngine for ServoEngine {
             "updated render surface metadata"
         );
         self.surface = Some(metadata);
+        if let Some(handle) = self.surface_handle.clone() {
+            if self.embedder.surface.is_some() {
+                self.embedder.update_surface(metadata);
+            } else {
+                self.embedder.attach_surface(handle, metadata);
+            }
+        }
+    }
+
+    fn render_frame(&mut self) -> Option<EngineFrame> {
+        self.embedder.tick();
+        if self.loading {
+            let next_progress = (self.navigation_state.load_progress + 0.08).min(1.0);
+            self.navigation_state.load_progress = next_progress;
+            if next_progress >= 1.0 {
+                self.navigation_state.document_ready = true;
+                self.navigation_state.title = format!("Servo: {}", self.navigation_state.url);
+                self.navigation_state.metadata_summary = Some("Document ready".to_string());
+                if self.navigation_state.url.starts_with("http") {
+                    self.navigation_state.favicon_url =
+                        Some(format!("{}/favicon.ico", self.navigation_state.url));
+                }
+                self.loading = false;
+            }
+            self.events.push(EngineEvent::NavigationStateUpdated(
+                self.navigation_state.clone(),
+            ));
+        }
+        let frame = self.embedder.render_frame();
+        if let Some(frame) = frame.as_ref() {
+            self.frame_counter = frame.frame_number;
+        }
+        frame
     }
 
     fn set_focus(&mut self, focus: FocusState) {
         self.focus = focus;
         tracing::debug!(target: "brazen::engine::servo", ?focus, "focus updated");
+        self.embedder.set_focus(focus);
     }
 
     fn handle_input(&mut self, event: InputEvent) {
         tracing::debug!(target: "brazen::engine::servo", ?event, "input event");
+        self.embedder.handle_input(&event);
     }
 
     fn handle_ime(&mut self, event: ImeEvent) {
         tracing::debug!(target: "brazen::engine::servo", ?event, "ime event");
+        self.embedder.handle_ime(&event);
     }
 
     fn handle_clipboard(&mut self, request: ClipboardRequest) {
         tracing::debug!(target: "brazen::engine::servo", ?request, "clipboard request");
         self.events.push(EngineEvent::ClipboardRequested(request));
+        self.embedder.handle_clipboard(&request);
+    }
+
+    fn set_verbose_logging(&mut self, enabled: bool) {
+        self.verbose_logging = enabled;
+        self.embedder.set_verbose_logging(enabled);
+    }
+
+    fn configure_devtools(&mut self, enabled: bool, transport: &str) {
+        let endpoint = self.embedder.configure_devtools(enabled, transport);
+        if let Some(endpoint) = endpoint {
+            self.events.push(EngineEvent::DevtoolsReady { endpoint });
+        }
     }
 
     fn suspend(&mut self) {
         self.status = EngineStatus::Initializing;
         self.events.push(EngineEvent::StatusChanged(self.status()));
+        self.embedder.suspend();
     }
 
     fn resume(&mut self) {
         self.status = EngineStatus::Ready;
         self.events.push(EngineEvent::StatusChanged(self.status()));
+        self.embedder.resume();
     }
 
     fn shutdown(&mut self) {
         self.status = EngineStatus::NoEngine;
         self.events.push(EngineEvent::StatusChanged(self.status()));
+        self.embedder.shutdown();
     }
 
     fn inject_event(&mut self, event: EngineEvent) {

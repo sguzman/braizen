@@ -29,6 +29,7 @@ servo_source_tag = "v0.0.4"
 servo_source_rev = "b73ae02"
 enable_multiprocess = false
 new_window_policy = "same-tab"
+verbose_logging = false
 devtools_enabled = false
 devtools_transport = "none"
 security_warnings = true

@@ -177,6 +177,8 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         last_security_warning: None,
         last_crash: None,
         last_crash_dump: None,
+        devtools_endpoint: None,
+        engine_verbose_logging: false,
         session: brazen::session::SessionSnapshot::new("default".to_string(), "now".to_string()),
         event_log: Vec::new(),
         log_panel_open: true,
@@ -199,6 +201,9 @@ fn command_dispatch_routes_navigation_and_panel_state() {
 
     let outcome = dispatch_command(&mut shell, &mut engine, AppCommand::GoForward);
     assert_eq!(outcome, CommandOutcome::ForwardScheduled);
+
+    let outcome = dispatch_command(&mut shell, &mut engine, AppCommand::StopLoading);
+    assert_eq!(outcome, CommandOutcome::StopScheduled);
 
     let outcome = dispatch_command(&mut shell, &mut engine, AppCommand::ToggleLogPanel);
     assert_eq!(outcome, CommandOutcome::LogPanelVisibility(false));

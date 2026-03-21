@@ -37,6 +37,8 @@ pub struct ShellState {
     pub last_security_warning: Option<(SecurityWarningKind, String)>,
     pub last_crash: Option<String>,
     pub last_crash_dump: Option<String>,
+    pub devtools_endpoint: Option<String>,
+    pub engine_verbose_logging: bool,
     pub session: SessionSnapshot,
     pub event_log: Vec<String>,
     pub log_panel_open: bool,
@@ -56,6 +58,10 @@ impl ShellState {
         self.active_tab = engine.active_tab().clone();
         for event in engine.take_events() {
             match event {
+                EngineEvent::StatusChanged(status) => {
+                    self.engine_status = status.clone();
+                    self.record_event(format!("status: {status}"));
+                }
                 EngineEvent::NavigationStateUpdated(state) => {
                     self.page_title = state.title.clone();
                     self.load_progress = state.load_progress;
@@ -88,6 +94,10 @@ impl ShellState {
                 }
                 EngineEvent::ClipboardRequested(request) => {
                     self.record_event(format!("clipboard request: {request:?}"));
+                }
+                EngineEvent::DevtoolsReady { endpoint } => {
+                    self.devtools_endpoint = Some(endpoint.clone());
+                    self.record_event(format!("devtools ready: {endpoint}"));
                 }
                 EngineEvent::PopupRequested { url, disposition } => {
                     self.pending_popup = Some((url.clone(), disposition.clone()));
@@ -219,6 +229,8 @@ pub fn build_shell_state(
         last_security_warning: None,
         last_crash: None,
         last_crash_dump: None,
+        devtools_endpoint: None,
+        engine_verbose_logging: config.engine.verbose_logging,
         session,
         event_log: vec![
             format!("loaded config for {}", config.app.name),
@@ -255,6 +267,11 @@ pub struct BrazenApp {
     engine_factory: crate::engine::ServoEngineFactory,
     surface_handle: RenderSurfaceHandle,
     last_surface: Option<RenderSurfaceMetadata>,
+    render_texture: Option<eframe::egui::TextureHandle>,
+    render_frame_number: Option<u64>,
+    render_frame_size: Option<(u32, u32)>,
+    pending_restart_at: Option<chrono::DateTime<Utc>>,
+    crash_count: u32,
     cache_store: AssetStore,
     cache_query_url: String,
     cache_query_mime: String,
@@ -268,7 +285,12 @@ pub struct BrazenApp {
 impl BrazenApp {
     pub fn new(config: BrazenConfig, shell_state: ShellState) -> Self {
         let engine_factory = crate::engine::ServoEngineFactory;
-        let engine = engine_factory.create(&config, &shell_state.runtime_paths);
+        let mut engine = engine_factory.create(&config, &shell_state.runtime_paths);
+        engine.set_verbose_logging(config.engine.verbose_logging);
+        engine.configure_devtools(
+            config.engine.devtools_enabled,
+            &config.engine.devtools_transport,
+        );
         let surface_handle = RenderSurfaceHandle {
             id: 1,
             label: "primary-surface".to_string(),
@@ -286,6 +308,11 @@ impl BrazenApp {
             engine_factory,
             surface_handle,
             last_surface: None,
+            render_texture: None,
+            render_frame_number: None,
+            render_frame_size: None,
+            pending_restart_at: None,
+            crash_count: 0,
             cache_store,
             cache_query_url: String::new(),
             cache_query_mime: String::new(),
@@ -328,6 +355,30 @@ impl BrazenApp {
             self.engine.set_render_surface(metadata.clone());
             self.last_surface = Some(metadata);
         }
+    }
+
+    fn update_render_frame(&mut self, ctx: &eframe::egui::Context) {
+        let Some(frame) = self.engine.render_frame() else {
+            return;
+        };
+        let size = [frame.width as usize, frame.height as usize];
+        let image = eframe::egui::ColorImage::from_rgba_unmultiplied(size, &frame.pixels);
+        let options = eframe::egui::TextureOptions::LINEAR;
+        match self.render_texture.as_mut() {
+            Some(texture) => {
+                if texture.size() != size {
+                    *texture = ctx.load_texture("brazen-render", image, options);
+                } else {
+                    texture.set(image, options);
+                }
+            }
+            None => {
+                self.render_texture = Some(ctx.load_texture("brazen-render", image, options));
+            }
+        }
+        self.render_frame_number = Some(frame.frame_number);
+        self.render_frame_size = Some((frame.width, frame.height));
+        ctx.request_repaint();
     }
 
     fn forward_input_events(&mut self, ctx: &eframe::egui::Context) {
@@ -474,7 +525,15 @@ impl BrazenApp {
             .crash_dumps_dir
             .join(filename);
         let _ = std::fs::create_dir_all(&self.shell_state.runtime_paths.crash_dumps_dir);
-        let _ = std::fs::write(&path, reason.as_bytes());
+        let payload = format!(
+            "timestamp={}\nreason={}\nsession_id={}\nprofile={}\nactive_url={}\n",
+            timestamp,
+            reason,
+            self.shell_state.session.session_id.0,
+            self.shell_state.session.profile_id,
+            self.shell_state.active_tab.current_url
+        );
+        let _ = std::fs::write(&path, payload.as_bytes());
         self.shell_state.last_crash_dump = Some(path.display().to_string());
     }
 
@@ -483,8 +542,43 @@ impl BrazenApp {
         self.engine = self
             .engine_factory
             .create(&self.config, &self.shell_state.runtime_paths);
+        self.engine
+            .set_verbose_logging(self.shell_state.engine_verbose_logging);
+        self.engine.configure_devtools(
+            self.config.engine.devtools_enabled,
+            &self.config.engine.devtools_transport,
+        );
         self.last_surface = None;
+        self.render_texture = None;
         self.shell_state.record_event("engine restarted");
+    }
+
+    fn schedule_restart(&mut self) {
+        if self.pending_restart_at.is_some() {
+            return;
+        }
+        self.crash_count = self.crash_count.saturating_add(1);
+        let exponent = self.crash_count.min(5);
+        let backoff = 2u64.pow(exponent);
+        let delay = chrono::Duration::seconds(backoff as i64);
+        let scheduled = Utc::now() + delay;
+        self.pending_restart_at = Some(scheduled);
+        self.shell_state
+            .record_event(format!("engine restart scheduled in {backoff}s"));
+    }
+
+    fn handle_crash_recovery(&mut self) {
+        if self.shell_state.last_crash.is_some() {
+            self.schedule_restart();
+        }
+        if let Some(scheduled) = self.pending_restart_at {
+            if Utc::now() >= scheduled {
+                self.restart_engine();
+                self.shell_state.last_crash = None;
+                self.shell_state.session.crash_recovery_pending = false;
+                self.pending_restart_at = None;
+            }
+        }
     }
 
     fn render_cache_panel(&mut self, ui: &mut eframe::egui::Ui) {
@@ -599,6 +693,7 @@ impl eframe::App for BrazenApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.update_render_surface(ctx);
         self.forward_input_events(ctx);
+        self.update_render_frame(ctx);
         self.shell_state.sync_from_engine(self.engine.as_mut());
         self.apply_new_window_policy();
         if let Some(reason) = self.shell_state.last_crash.clone() {
@@ -606,6 +701,7 @@ impl eframe::App for BrazenApp {
                 self.write_crash_dump(&reason);
             }
         }
+        self.handle_crash_recovery();
 
         eframe::egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -661,6 +757,13 @@ impl eframe::App for BrazenApp {
                         &mut self.shell_state,
                         self.engine.as_mut(),
                         AppCommand::ReloadActiveTab,
+                    );
+                }
+                if ui.button("Stop").clicked() {
+                    let _ = dispatch_command(
+                        &mut self.shell_state,
+                        self.engine.as_mut(),
+                        AppCommand::StopLoading,
                     );
                 }
                 if ui.button("Restart Engine").clicked() {
@@ -805,6 +908,27 @@ impl eframe::App for BrazenApp {
                 if let Some(path) = &self.shell_state.last_crash_dump {
                     ui.label(format!("Crash dump: {path}"));
                 }
+                if let Some(endpoint) = &self.shell_state.devtools_endpoint {
+                    ui.label(format!("Devtools: {endpoint}"));
+                }
+                if ui
+                    .checkbox(
+                        &mut self.shell_state.engine_verbose_logging,
+                        "Verbose Servo logging",
+                    )
+                    .changed()
+                {
+                    self.engine
+                        .set_verbose_logging(self.shell_state.engine_verbose_logging);
+                    self.shell_state.record_event(format!(
+                        "servo verbose logging {}",
+                        if self.shell_state.engine_verbose_logging {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    ));
+                }
                 ui.collapsing("Debug events", |ui| {
                     if ui.button("Sim Popup").clicked() {
                         self.engine.inject_event(EngineEvent::PopupRequested {
@@ -868,6 +992,16 @@ impl eframe::App for BrazenApp {
             ui.separator();
             ui.label(format!("Engine state: {}", self.shell_state.engine_status));
             ui.label("This viewport is reserved for Servo-backed rendering surfaces.");
+            if let Some(frame_number) = self.render_frame_number {
+                let size = self
+                    .render_frame_size
+                    .map(|(w, h)| format!("{w}x{h}"))
+                    .unwrap_or_else(|| "unknown".to_string());
+                ui.label(format!("Frame: {frame_number} ({size})"));
+            }
+            if let Some(texture) = &self.render_texture {
+                ui.add(eframe::egui::Image::from_texture(texture).shrink_to_fit());
+            }
             ui.add_space(12.0);
             ui.group(|ui| {
                 ui.label("Current target");
@@ -922,7 +1056,7 @@ impl Drop for BrazenApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{BrowserEngine, BrowserTab, EngineEvent, EngineStatus};
+    use crate::engine::{BrowserEngine, BrowserTab, EngineEvent, EngineFrame, EngineStatus};
 
     struct MockEngine {
         status: EngineStatus,
@@ -955,6 +1089,8 @@ mod tests {
 
         fn reload(&mut self) {}
 
+        fn stop(&mut self) {}
+
         fn go_back(&mut self) {}
 
         fn go_forward(&mut self) {}
@@ -963,6 +1099,10 @@ mod tests {
 
         fn set_render_surface(&mut self, _metadata: RenderSurfaceMetadata) {}
 
+        fn render_frame(&mut self) -> Option<EngineFrame> {
+            None
+        }
+
         fn set_focus(&mut self, _focus: crate::engine::FocusState) {}
 
         fn handle_input(&mut self, _event: crate::engine::InputEvent) {}
@@ -970,6 +1110,10 @@ mod tests {
         fn handle_ime(&mut self, _event: crate::engine::ImeEvent) {}
 
         fn handle_clipboard(&mut self, _request: crate::engine::ClipboardRequest) {}
+
+        fn set_verbose_logging(&mut self, _enabled: bool) {}
+
+        fn configure_devtools(&mut self, _enabled: bool, _transport: &str) {}
 
         fn suspend(&mut self) {}
 
@@ -1028,6 +1172,8 @@ mod tests {
             last_security_warning: None,
             last_crash: None,
             last_crash_dump: None,
+            devtools_endpoint: None,
+            engine_verbose_logging: false,
             session: SessionSnapshot::new("default".to_string(), "now".to_string()),
             event_log: Vec::new(),
             log_panel_open: true,
@@ -1047,12 +1193,7 @@ mod tests {
         };
         shell.sync_from_engine(&mut ready_engine);
         assert_eq!(shell.engine_status, EngineStatus::Ready);
-        assert!(
-            shell
-                .event_log
-                .iter()
-                .any(|line| line.contains("StatusChanged"))
-        );
+        assert!(shell.event_log.iter().any(|line| line.contains("status:")));
 
         let mut failing_engine = MockEngine {
             status: EngineStatus::Error("boot failed".to_string()),
