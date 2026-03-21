@@ -21,6 +21,12 @@ file_filter = "debug,brazen=trace"
 file_name_prefix = "brazen.log"
 ansi = true
 
+[engine]
+process_model = "single-process"
+gfx_backend = "gl"
+servo_source = ""
+enable_multiprocess = false
+
 [directories]
 # Use "default" to resolve through platform-specific app data directories.
 data_dir = "default"

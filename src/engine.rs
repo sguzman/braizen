@@ -3,6 +3,36 @@ use std::fmt;
 use crate::config::BrazenConfig;
 use crate::platform_paths::RuntimePaths;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusState {
+    Focused,
+    Unfocused,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputEvent {
+    PointerMove { x: f32, y: f32 },
+    PointerDown { button: u8 },
+    PointerUp { button: u8 },
+    Scroll { delta_x: f32, delta_y: f32 },
+    KeyDown { key: String },
+    KeyUp { key: String },
+    TextInput { text: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImeEvent {
+    CompositionStart,
+    CompositionUpdate { text: String },
+    CompositionEnd { text: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClipboardRequest {
+    Read,
+    Write(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EngineStatus {
     NoEngine,
@@ -29,10 +59,21 @@ pub struct RenderSurfaceMetadata {
     pub scale_factor_basis_points: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct NavigationState {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
+    pub load_progress: f32,
+    pub title: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum EngineEvent {
     StatusChanged(EngineStatus),
     NavigationRequested(String),
+    NavigationStateUpdated(NavigationState),
+    ClipboardRequested(ClipboardRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +95,16 @@ pub trait BrowserEngine: Send {
     fn active_tab(&self) -> &BrowserTab;
     fn navigate(&mut self, url: &str);
     fn reload(&mut self);
+    fn go_back(&mut self);
+    fn go_forward(&mut self);
     fn set_render_surface(&mut self, metadata: RenderSurfaceMetadata);
+    fn set_focus(&mut self, focus: FocusState);
+    fn handle_input(&mut self, event: InputEvent);
+    fn handle_ime(&mut self, event: ImeEvent);
+    fn handle_clipboard(&mut self, request: ClipboardRequest);
+    fn suspend(&mut self);
+    fn resume(&mut self);
+    fn shutdown(&mut self);
     fn take_events(&mut self) -> Vec<EngineEvent>;
 }
 
@@ -67,10 +117,19 @@ pub struct NullEngine {
     active_tab: BrowserTab,
     events: Vec<EngineEvent>,
     _surface: Option<RenderSurfaceMetadata>,
+    navigation_state: NavigationState,
+    focus: FocusState,
 }
 
 impl NullEngine {
     pub fn new() -> Self {
+        let navigation_state = NavigationState {
+            can_go_back: false,
+            can_go_forward: false,
+            load_progress: 0.0,
+            title: "Platform Skeleton".to_string(),
+            url: "about:blank".to_string(),
+        };
         Self {
             status: EngineStatus::NoEngine,
             active_tab: BrowserTab {
@@ -80,6 +139,8 @@ impl NullEngine {
             },
             events: Vec::new(),
             _surface: None,
+            navigation_state,
+            focus: FocusState::Unfocused,
         }
     }
 }
@@ -105,16 +166,74 @@ impl BrowserEngine for NullEngine {
 
     fn navigate(&mut self, url: &str) {
         self.active_tab.current_url = url.to_string();
+        self.navigation_state.url = url.to_string();
+        self.navigation_state.title = "Loading...".to_string();
+        self.navigation_state.load_progress = 0.1;
+        if self.active_tab.current_url != "about:blank" {
+            self.navigation_state.can_go_back = true;
+        }
         self.events
             .push(EngineEvent::NavigationRequested(url.to_string()));
+        self.events.push(EngineEvent::NavigationStateUpdated(
+            self.navigation_state.clone(),
+        ));
     }
 
     fn reload(&mut self) {
-        self.events.push(EngineEvent::StatusChanged(self.status()));
+        self.navigation_state.load_progress = 0.05;
+        self.events.push(EngineEvent::NavigationStateUpdated(
+            self.navigation_state.clone(),
+        ));
+    }
+
+    fn go_back(&mut self) {
+        if self.navigation_state.can_go_back {
+            self.navigation_state.can_go_forward = true;
+            self.navigation_state.load_progress = 0.2;
+            self.events.push(EngineEvent::NavigationStateUpdated(
+                self.navigation_state.clone(),
+            ));
+        }
+    }
+
+    fn go_forward(&mut self) {
+        if self.navigation_state.can_go_forward {
+            self.navigation_state.load_progress = 0.2;
+            self.events.push(EngineEvent::NavigationStateUpdated(
+                self.navigation_state.clone(),
+            ));
+        }
     }
 
     fn set_render_surface(&mut self, metadata: RenderSurfaceMetadata) {
         self._surface = Some(metadata);
+    }
+
+    fn set_focus(&mut self, focus: FocusState) {
+        self.focus = focus;
+    }
+
+    fn handle_input(&mut self, _event: InputEvent) {}
+
+    fn handle_ime(&mut self, _event: ImeEvent) {}
+
+    fn handle_clipboard(&mut self, request: ClipboardRequest) {
+        self.events.push(EngineEvent::ClipboardRequested(request));
+    }
+
+    fn suspend(&mut self) {
+        self.status = EngineStatus::Initializing;
+        self.events.push(EngineEvent::StatusChanged(self.status()));
+    }
+
+    fn resume(&mut self) {
+        self.status = EngineStatus::Ready;
+        self.events.push(EngineEvent::StatusChanged(self.status()));
+    }
+
+    fn shutdown(&mut self) {
+        self.status = EngineStatus::NoEngine;
+        self.events.push(EngineEvent::StatusChanged(self.status()));
     }
 
     fn take_events(&mut self) -> Vec<EngineEvent> {
@@ -144,6 +263,8 @@ pub struct ServoEngine {
     active_tab: BrowserTab,
     events: Vec<EngineEvent>,
     surface: Option<RenderSurfaceMetadata>,
+    navigation_state: NavigationState,
+    focus: FocusState,
 }
 
 #[cfg(feature = "servo")]
@@ -154,6 +275,13 @@ impl ServoEngine {
             EngineEvent::StatusChanged(EngineStatus::Initializing),
             EngineEvent::StatusChanged(EngineStatus::Ready),
         ];
+        let navigation_state = NavigationState {
+            can_go_back: false,
+            can_go_forward: false,
+            load_progress: 0.0,
+            title: "Servo Scaffold".to_string(),
+            url: "about:blank".to_string(),
+        };
 
         Self {
             status: EngineStatus::Ready,
@@ -164,6 +292,8 @@ impl ServoEngine {
             },
             events,
             surface: None,
+            navigation_state,
+            focus: FocusState::Unfocused,
         }
     }
 }
@@ -192,12 +322,40 @@ impl BrowserEngine for ServoEngine {
     fn navigate(&mut self, url: &str) {
         tracing::info!(target: "brazen::engine::servo", %url, "servo scaffold navigate");
         self.active_tab.current_url = url.to_string();
+        self.navigation_state.url = url.to_string();
+        self.navigation_state.title = "Loading...".to_string();
+        self.navigation_state.load_progress = 0.1;
+        if self.active_tab.current_url != "about:blank" {
+            self.navigation_state.can_go_back = true;
+        }
         self.events
             .push(EngineEvent::NavigationRequested(url.to_string()));
+        self.events.push(EngineEvent::NavigationStateUpdated(
+            self.navigation_state.clone(),
+        ));
     }
 
     fn reload(&mut self) {
         tracing::info!(target: "brazen::engine::servo", "servo scaffold reload");
+    }
+
+    fn go_back(&mut self) {
+        tracing::info!(target: "brazen::engine::servo", "servo scaffold go back");
+        if self.navigation_state.can_go_back {
+            self.navigation_state.can_go_forward = true;
+            self.events.push(EngineEvent::NavigationStateUpdated(
+                self.navigation_state.clone(),
+            ));
+        }
+    }
+
+    fn go_forward(&mut self) {
+        tracing::info!(target: "brazen::engine::servo", "servo scaffold go forward");
+        if self.navigation_state.can_go_forward {
+            self.events.push(EngineEvent::NavigationStateUpdated(
+                self.navigation_state.clone(),
+            ));
+        }
     }
 
     fn set_render_surface(&mut self, metadata: RenderSurfaceMetadata) {
@@ -209,6 +367,39 @@ impl BrowserEngine for ServoEngine {
             "updated render surface metadata"
         );
         self.surface = Some(metadata);
+    }
+
+    fn set_focus(&mut self, focus: FocusState) {
+        self.focus = focus;
+        tracing::debug!(target: "brazen::engine::servo", ?focus, "focus updated");
+    }
+
+    fn handle_input(&mut self, event: InputEvent) {
+        tracing::debug!(target: "brazen::engine::servo", ?event, "input event");
+    }
+
+    fn handle_ime(&mut self, event: ImeEvent) {
+        tracing::debug!(target: "brazen::engine::servo", ?event, "ime event");
+    }
+
+    fn handle_clipboard(&mut self, request: ClipboardRequest) {
+        tracing::debug!(target: "brazen::engine::servo", ?request, "clipboard request");
+        self.events.push(EngineEvent::ClipboardRequested(request));
+    }
+
+    fn suspend(&mut self) {
+        self.status = EngineStatus::Initializing;
+        self.events.push(EngineEvent::StatusChanged(self.status()));
+    }
+
+    fn resume(&mut self) {
+        self.status = EngineStatus::Ready;
+        self.events.push(EngineEvent::StatusChanged(self.status()));
+    }
+
+    fn shutdown(&mut self) {
+        self.status = EngineStatus::NoEngine;
+        self.events.push(EngineEvent::StatusChanged(self.status()));
     }
 
     fn take_events(&mut self) -> Vec<EngineEvent> {

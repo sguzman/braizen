@@ -1,7 +1,7 @@
 use crate::commands::{AppCommand, dispatch_command};
 use crate::config::BrazenConfig;
 use crate::engine::{
-    BrowserEngine, BrowserTab, EngineFactory, EngineStatus, RenderSurfaceMetadata,
+    BrowserEngine, BrowserTab, EngineEvent, EngineFactory, EngineStatus, RenderSurfaceMetadata,
 };
 use crate::permissions::Capability;
 use crate::platform_paths::RuntimePaths;
@@ -13,6 +13,10 @@ pub struct ShellState {
     pub engine_status: EngineStatus,
     pub active_tab: BrowserTab,
     pub address_bar_input: String,
+    pub page_title: String,
+    pub load_progress: f32,
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
     pub event_log: Vec<String>,
     pub log_panel_open: bool,
     pub permission_panel_open: bool,
@@ -29,7 +33,25 @@ impl ShellState {
         self.engine_status = engine.status();
         self.active_tab = engine.active_tab().clone();
         for event in engine.take_events() {
-            self.record_event(format!("engine event: {event:?}"));
+            match event {
+                EngineEvent::NavigationStateUpdated(state) => {
+                    self.page_title = state.title.clone();
+                    self.load_progress = state.load_progress;
+                    self.can_go_back = state.can_go_back;
+                    self.can_go_forward = state.can_go_forward;
+                    self.record_event(format!(
+                        "nav: {} ({:.0}%)",
+                        state.url,
+                        state.load_progress * 100.0
+                    ));
+                }
+                EngineEvent::ClipboardRequested(request) => {
+                    self.record_event(format!("clipboard request: {request:?}"));
+                }
+                other => {
+                    self.record_event(format!("engine event: {other:?}"));
+                }
+            }
         }
     }
 }
@@ -90,6 +112,10 @@ pub fn build_shell_state(
         engine_status: engine.status(),
         active_tab: engine.active_tab().clone(),
         address_bar_input: config.app.homepage.clone(),
+        page_title: engine.active_tab().title.clone(),
+        load_progress: 0.0,
+        can_go_back: false,
+        can_go_forward: false,
         event_log: vec![
             format!("loaded config for {}", config.app.name),
             format!("data dir: {}", paths.data_dir.display()),
@@ -148,9 +174,29 @@ impl eframe::App for BrazenApp {
                 ui.label(format!("backend: {}", self.shell_state.backend_name));
                 ui.separator();
                 ui.label(format!("status: {}", self.shell_state.engine_status));
+                ui.separator();
+                ui.label(format!("title: {}", self.shell_state.page_title));
             });
 
             ui.horizontal(|ui| {
+                ui.add_enabled_ui(self.shell_state.can_go_back, |ui| {
+                    if ui.button("Back").clicked() {
+                        let _ = dispatch_command(
+                            &mut self.shell_state,
+                            self.engine.as_mut(),
+                            AppCommand::GoBack,
+                        );
+                    }
+                });
+                ui.add_enabled_ui(self.shell_state.can_go_forward, |ui| {
+                    if ui.button("Forward").clicked() {
+                        let _ = dispatch_command(
+                            &mut self.shell_state,
+                            self.engine.as_mut(),
+                            AppCommand::GoForward,
+                        );
+                    }
+                });
                 let response = ui.text_edit_singleline(&mut self.shell_state.address_bar_input);
                 let enter_pressed = ui.input(|input| input.key_pressed(eframe::egui::Key::Enter));
                 if response.lost_focus() && enter_pressed {
@@ -181,6 +227,11 @@ impl eframe::App for BrazenApp {
                     );
                 }
             });
+            ui.add(
+                eframe::egui::ProgressBar::new(self.shell_state.load_progress)
+                    .show_percentage()
+                    .desired_width(f32::INFINITY),
+            );
         });
 
         eframe::egui::SidePanel::left("tab_sidebar")
@@ -280,7 +331,25 @@ mod tests {
 
         fn reload(&mut self) {}
 
+        fn go_back(&mut self) {}
+
+        fn go_forward(&mut self) {}
+
         fn set_render_surface(&mut self, _metadata: RenderSurfaceMetadata) {}
+
+        fn set_focus(&mut self, _focus: crate::engine::FocusState) {}
+
+        fn handle_input(&mut self, _event: crate::engine::InputEvent) {}
+
+        fn handle_ime(&mut self, _event: crate::engine::ImeEvent) {}
+
+        fn handle_clipboard(&mut self, _request: crate::engine::ClipboardRequest) {}
+
+        fn suspend(&mut self) {}
+
+        fn resume(&mut self) {}
+
+        fn shutdown(&mut self) {}
 
         fn take_events(&mut self) -> Vec<EngineEvent> {
             std::mem::take(&mut self.events)
@@ -306,6 +375,10 @@ mod tests {
                 current_url: "about:blank".to_string(),
             },
             address_bar_input: "https://example.com".to_string(),
+            page_title: "Loading".to_string(),
+            load_progress: 0.0,
+            can_go_back: false,
+            can_go_forward: false,
             event_log: Vec::new(),
             log_panel_open: true,
             permission_panel_open: false,

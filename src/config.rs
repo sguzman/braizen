@@ -13,6 +13,7 @@ pub struct BrazenConfig {
     pub app: AppConfig,
     pub window: WindowConfig,
     pub logging: LoggingConfig,
+    pub engine: EngineConfig,
     pub directories: DirectoryRootsConfig,
     pub cache: CacheConfig,
     pub permissions: PermissionPolicy,
@@ -204,6 +205,26 @@ impl Default for LoggingConfig {
             file_filter: "debug,brazen=trace".to_string(),
             file_name_prefix: "brazen.log".to_string(),
             ansi: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EngineConfig {
+    pub process_model: String,
+    pub gfx_backend: String,
+    pub servo_source: Option<String>,
+    pub enable_multiprocess: bool,
+}
+
+impl Default for EngineConfig {
+    fn default() -> Self {
+        Self {
+            process_model: "single-process".to_string(),
+            gfx_backend: "gl".to_string(),
+            servo_source: None,
+            enable_multiprocess: false,
         }
     }
 }

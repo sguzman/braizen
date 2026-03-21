@@ -50,6 +50,7 @@ The runtime loader:
 - merges user TOML over built-in defaults
 - validates the active fields used by the current skeleton
 - resolves `default` directory entries through platform app-data locations
+- exposes engine embedding knobs under `[engine]`
 
 ### Logging
 

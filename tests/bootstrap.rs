@@ -138,6 +138,10 @@ fn command_dispatch_routes_navigation_and_panel_state() {
             current_url: "about:blank".to_string(),
         },
         address_bar_input: String::new(),
+        page_title: "Platform Skeleton".to_string(),
+        load_progress: 0.0,
+        can_go_back: false,
+        can_go_forward: false,
         event_log: Vec::new(),
         log_panel_open: true,
         permission_panel_open: false,
@@ -153,6 +157,12 @@ fn command_dispatch_routes_navigation_and_panel_state() {
     );
     assert_eq!(outcome, CommandOutcome::NavigationScheduled);
     assert_eq!(engine.active_tab().current_url, "https://example.com");
+
+    let outcome = dispatch_command(&mut shell, &mut engine, AppCommand::GoBack);
+    assert_eq!(outcome, CommandOutcome::BackScheduled);
+
+    let outcome = dispatch_command(&mut shell, &mut engine, AppCommand::GoForward);
+    assert_eq!(outcome, CommandOutcome::ForwardScheduled);
 
     let outcome = dispatch_command(&mut shell, &mut engine, AppCommand::ToggleLogPanel);
     assert_eq!(outcome, CommandOutcome::LogPanelVisibility(false));
@@ -209,10 +219,15 @@ fn null_engine_emits_navigation_event() {
     let mut engine = NullEngine::new();
     engine.navigate("https://example.com");
     let events = engine.take_events();
-    assert_eq!(
-        events,
-        vec![EngineEvent::NavigationRequested(
-            "https://example.com".to_string()
-        )]
+    assert!(events.iter().any(|event| {
+        matches!(
+            event,
+            EngineEvent::NavigationRequested(url) if url == "https://example.com"
+        )
+    }));
+    assert!(
+        events
+            .iter()
+            .any(|event| { matches!(event, EngineEvent::NavigationStateUpdated(_)) })
     );
 }
