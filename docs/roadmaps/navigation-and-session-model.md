@@ -9,6 +9,7 @@ Tracks tabs, windows, browsing sessions, lifecycle state, and the browser’s in
 - [x] Navigation command dispatch exists
 - [x] Reload command exists
 - [x] Engine-originated events are surfaced into shell state
+- [x] Back/forward commands are modeled in the shell
 
 ## Core Session Model
 

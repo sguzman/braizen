@@ -9,6 +9,8 @@ Tracks the content-engine boundary, Servo embedding, render surfaces, and shell-
 - [x] Feature-gated Servo scaffold backend exists
 - [x] Engine status states include `NoEngine`, `Initializing`, `Ready`, and `Error`
 - [x] Render-surface metadata is modeled
+- [x] Engine seam includes input, IME, focus, and clipboard hooks
+- [x] Navigation-state events and back/forward hooks are modeled
 
 ## Embedding Foundation
 
@@ -33,7 +35,7 @@ Tracks the content-engine boundary, Servo embedding, render surfaces, and shell-
 - [ ] Tab-to-engine instance mapping
 - [ ] Per-tab engine lifecycle (create, suspend, resume, destroy)
 - [ ] Background tab throttling strategy
-- [ ] Navigation lifecycle events from Servo into shell state
+- [x] Navigation lifecycle events from engine into shell state
 - [ ] Expose load progress and document-ready milestones
 - [ ] Capture title, favicon, and metadata updates from Servo
 - [ ] Link navigation events to command log and history model
