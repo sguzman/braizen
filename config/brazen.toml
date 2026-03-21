@@ -59,6 +59,13 @@ selective_body_capture = true
 archive_replay_mode = false
 max_entry_bytes = 10485760
 third_party_mode = "metadata-only"
+storage_mode = "disk"
+host_allowlist = []
+host_denylist = []
+authenticated_only = false
+capture_html_json_css_js = true
+capture_media = true
+gc_max_entries = 5000
 mime_allowlist = [
   "text/html",
   "application/json",

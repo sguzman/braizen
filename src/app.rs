@@ -1,5 +1,6 @@
 use chrono::Utc;
 
+use crate::cache::{AssetQuery, AssetStore};
 use crate::commands::{AppCommand, dispatch_command};
 use crate::config::BrazenConfig;
 use crate::engine::{
@@ -254,6 +255,14 @@ pub struct BrazenApp {
     engine_factory: crate::engine::ServoEngineFactory,
     surface_handle: RenderSurfaceHandle,
     last_surface: Option<RenderSurfaceMetadata>,
+    cache_store: AssetStore,
+    cache_query_url: String,
+    cache_query_mime: String,
+    cache_query_hash: String,
+    cache_query_session: String,
+    cache_export_path: String,
+    cache_import_path: String,
+    cache_manifest_path: String,
 }
 
 impl BrazenApp {
@@ -264,6 +273,11 @@ impl BrazenApp {
             id: 1,
             label: "primary-surface".to_string(),
         };
+        let cache_store = AssetStore::load(
+            config.cache.clone(),
+            &shell_state.runtime_paths,
+            config.profiles.active_profile.clone(),
+        );
 
         Self {
             config,
@@ -272,6 +286,14 @@ impl BrazenApp {
             engine_factory,
             surface_handle,
             last_surface: None,
+            cache_store,
+            cache_query_url: String::new(),
+            cache_query_mime: String::new(),
+            cache_query_hash: String::new(),
+            cache_query_session: String::new(),
+            cache_export_path: "cache-export.json".to_string(),
+            cache_import_path: "cache-import.json".to_string(),
+            cache_manifest_path: "cache-manifest.json".to_string(),
         }
     }
 
@@ -463,6 +485,96 @@ impl BrazenApp {
             .create(&self.config, &self.shell_state.runtime_paths);
         self.last_surface = None;
         self.shell_state.record_event("engine restarted");
+    }
+
+    fn render_cache_panel(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.separator();
+        ui.heading("Cache");
+        ui.horizontal(|ui| {
+            if ui.button("Sim Capture").clicked() {
+                let mut headers = std::collections::BTreeMap::new();
+                headers.insert("content-type".to_string(), "text/html".to_string());
+                let session_id = Some(self.shell_state.session.session_id.0.to_string());
+                let tab_id = Some(self.shell_state.session.active_tab_mut().id.0.to_string());
+                let _ = self.cache_store.record_asset(
+                    &self.shell_state.active_tab.current_url,
+                    "text/html",
+                    Some(b"<html><body>Brazen</body></html>"),
+                    headers,
+                    false,
+                    false,
+                    session_id,
+                    tab_id,
+                    Some("request-1".to_string()),
+                );
+                self.shell_state.record_event("cache capture simulated");
+            }
+            if ui.button("Export").clicked() {
+                if self
+                    .cache_store
+                    .export_json(self.cache_export_path.as_ref())
+                    .is_ok()
+                {
+                    self.shell_state.record_event("cache export complete");
+                }
+            }
+            if ui.button("Import").clicked() {
+                if self
+                    .cache_store
+                    .import_json(self.cache_import_path.as_ref())
+                    .is_ok()
+                {
+                    self.shell_state.record_event("cache import complete");
+                }
+            }
+            if ui.button("Manifest").clicked() {
+                if self
+                    .cache_store
+                    .build_replay_manifest(self.cache_manifest_path.as_ref())
+                    .is_ok()
+                {
+                    self.shell_state.record_event("cache manifest written");
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("URL");
+            ui.text_edit_singleline(&mut self.cache_query_url);
+        });
+        ui.horizontal(|ui| {
+            ui.label("MIME");
+            ui.text_edit_singleline(&mut self.cache_query_mime);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Hash");
+            ui.text_edit_singleline(&mut self.cache_query_hash);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Session");
+            ui.text_edit_singleline(&mut self.cache_query_session);
+        });
+
+        let query = AssetQuery {
+            url: empty_to_none(&self.cache_query_url),
+            mime: empty_to_none(&self.cache_query_mime),
+            hash: empty_to_none(&self.cache_query_hash),
+            session_id: empty_to_none(&self.cache_query_session),
+        };
+        let results = self.cache_store.query(query);
+        ui.label(format!("Assets: {}", self.cache_store.entries().len()));
+        ui.label(format!("Matches: {}", results.len()));
+        for entry in results.iter().rev().take(5) {
+            ui.label(format!("{} {}", entry.mime, entry.url));
+        }
+    }
+}
+
+fn empty_to_none(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
@@ -717,6 +829,7 @@ impl eframe::App for BrazenApp {
                         });
                     }
                 });
+                self.render_cache_panel(ui);
             });
 
         if self.shell_state.permission_panel_open {

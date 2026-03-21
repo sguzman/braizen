@@ -62,6 +62,14 @@ impl BrazenConfig {
                 "cache.max_entry_bytes must be greater than zero".to_string(),
             ));
         }
+        match self.cache.storage_mode.as_str() {
+            "memory" | "disk" | "archive" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "cache.storage_mode must be memory, disk, or archive".to_string(),
+                ));
+            }
+        }
         if self.profiles.active_profile.trim().is_empty() {
             return Err(ConfigError::Validation(
                 "profiles.active_profile must be non-empty".to_string(),
@@ -368,6 +376,13 @@ pub struct CacheConfig {
     pub max_entry_bytes: u64,
     pub third_party_mode: String,
     pub mime_allowlist: Vec<String>,
+    pub host_allowlist: Vec<String>,
+    pub host_denylist: Vec<String>,
+    pub authenticated_only: bool,
+    pub capture_html_json_css_js: bool,
+    pub capture_media: bool,
+    pub gc_max_entries: u32,
+    pub storage_mode: String,
 }
 
 impl Default for CacheConfig {
@@ -385,6 +400,13 @@ impl Default for CacheConfig {
                 "application/javascript".to_string(),
                 "image/png".to_string(),
             ],
+            host_allowlist: Vec::new(),
+            host_denylist: Vec::new(),
+            authenticated_only: false,
+            capture_html_json_css_js: true,
+            capture_media: true,
+            gc_max_entries: 5000,
+            storage_mode: "disk".to_string(),
         }
     }
 }
