@@ -107,6 +107,11 @@ impl WebViewDelegate for BrazenWebViewDelegate {
 
     fn notify_load_status_changed(&self, _webview: WebView, status: LoadStatus) {
         self.snapshot.borrow_mut().load_status = status;
+        tracing::trace!(
+            target: "brazen::servo::lifecycle",
+            status = ?status,
+            "load status updated"
+        );
     }
 
     fn notify_history_changed(&self, _webview: WebView, entries: Vec<Url>, current: usize) {
@@ -121,10 +126,23 @@ impl WebViewDelegate for BrazenWebViewDelegate {
 
     fn notify_new_frame_ready(&self, _webview: WebView) {
         self.frame_ready.set(true);
+        tracing::trace!(
+            target: "brazen::servo::lifecycle",
+            "new frame ready"
+        );
     }
 
     fn notify_crashed(&self, _webview: WebView, reason: String, _backtrace: Option<String>) {
         self.snapshot.borrow_mut().last_error = Some(reason);
+    }
+
+    fn request_navigation(&self, _webview: WebView, request: libservo::NavigationRequest) {
+        tracing::info!(
+            target: "brazen::servo::lifecycle",
+            url = %request.url,
+            "navigation request observed"
+        );
+        request.allow();
     }
 }
 

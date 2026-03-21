@@ -20,7 +20,7 @@ Focuses on eliminating the current psychedelic render output and establishing a 
 
 ## Pipeline Wiring
 
-- [ ] Verify WebRender pipeline ID and document lifecycle timing
+- [x] Verify WebRender pipeline ID and document lifecycle timing
 - [x] Confirm we are draining paint messages before readback
 - [x] Add a trace span around readback → upload with byte counts
 - [x] Add a debug toggle to bypass color conversion for A/B comparison
@@ -36,5 +36,5 @@ Focuses on eliminating the current psychedelic render output and establishing a 
 ## Validation + Tests
 
 - [x] Add a regression test that renders a known gradient and checks sample pixels
-- [ ] Add a basic screenshot comparison test for about:blank
+- [x] Add a basic screenshot comparison test for about:blank
 - [x] Add a manual validation checklist to the README for visual sanity checks

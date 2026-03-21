@@ -27,3 +27,15 @@ Frame pacing is controlled by `engine.frame_pacing`:
 Servo readback currently uses OpenGL `read_pixels` with `RGBA`/`UNSIGNED_BYTE`, producing
 an RGBA8 buffer. Brazen treats the buffer as sRGB with straight (un-premultiplied) alpha
 unless overridden via the engine debug settings.
+
+## Lifecycle Logging
+
+Brazen emits trace logs under `brazen::servo::lifecycle` for:
+
+- navigation requests (`request_navigation`)
+- load status changes (`notify_load_status_changed`)
+- new frame readiness (`notify_new_frame_ready`)
+
+The current embedder API does not expose the internal pipeline ID, so we log the URL and
+event timing instead. If Servo later exposes a public pipeline identifier, we will attach
+it to these lifecycle events.
