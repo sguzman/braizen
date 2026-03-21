@@ -5,10 +5,10 @@ Focuses on turning the current Servo scaffold into an actual embedded renderer t
 ## Build And Sources
 
 - [x] Pin a specific Servo source revision with a reproducible fetch script
-- [ ] Add Servo as a git dependency or workspace submodule
+- [x] Add Servo as a git dependency or workspace submodule
 - [x] Document platform-specific build prerequisites for the pinned revision
 - [x] Establish a dedicated build profile for Servo artifacts
-- [ ] Add CI target that builds Servo in the same environment
+- [x] Add CI target that builds Servo in the same environment
 
 ## Embedder Runtime
 
