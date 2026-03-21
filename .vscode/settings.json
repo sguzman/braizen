@@ -1,0 +1,9 @@
+{
+  "files.watcherExclude": {
+    "**/vendor/servo/**": true
+  },
+  "search.exclude": {
+    "**/vendor/servo/**": true
+  },
+  "git.ignoreSubmodules": true
+}
