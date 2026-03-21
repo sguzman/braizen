@@ -21,6 +21,8 @@ pub struct RuntimePaths {
     pub cache_dir: PathBuf,
     pub downloads_dir: PathBuf,
     pub crash_dumps_dir: PathBuf,
+    pub active_profile_dir: PathBuf,
+    pub session_path: PathBuf,
 }
 
 #[derive(Debug, Error)]
@@ -82,6 +84,8 @@ impl PlatformPaths {
         let cache_dir = self.resolve_dir(&base_dir, &self.cache_root, &dirs.cache_dir);
         let downloads_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.downloads_dir);
         let crash_dumps_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.crash_dumps_dir);
+        let active_profile_dir = profiles_dir.join(&config.profiles.active_profile);
+        let session_path = active_profile_dir.join("session.json");
 
         Ok(RuntimePaths {
             config_path: config_path.to_path_buf(),
@@ -91,6 +95,8 @@ impl PlatformPaths {
             cache_dir,
             downloads_dir,
             crash_dumps_dir,
+            active_profile_dir,
+            session_path,
         })
     }
 

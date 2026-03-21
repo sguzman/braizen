@@ -100,6 +100,14 @@ fn runtime_paths_resolve_relative_to_config_directory() {
         runtime.crash_dumps_dir,
         std::path::PathBuf::from("/tmp/brazen-data")
     );
+    assert_eq!(
+        runtime.active_profile_dir,
+        std::path::PathBuf::from("/tmp/brazen-data/default")
+    );
+    assert_eq!(
+        runtime.session_path,
+        std::path::PathBuf::from("/tmp/brazen-data/default/session.json")
+    );
 }
 
 #[test]
@@ -137,6 +145,8 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         cache_dir: dir.path().join("cache"),
         downloads_dir: dir.path().join("downloads"),
         crash_dumps_dir: dir.path().join("crash-dumps"),
+        active_profile_dir: dir.path().join("profiles/default"),
+        session_path: dir.path().join("profiles/default/session.json"),
     };
     let mut shell = brazen::ShellState {
         app_name: "Brazen".to_string(),
@@ -167,6 +177,7 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         last_security_warning: None,
         last_crash: None,
         last_crash_dump: None,
+        session: brazen::session::SessionSnapshot::new("default".to_string(), "now".to_string()),
         event_log: Vec::new(),
         log_panel_open: true,
         permission_panel_open: false,

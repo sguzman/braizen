@@ -15,6 +15,7 @@ pub struct BrazenConfig {
     pub logging: LoggingConfig,
     pub engine: EngineConfig,
     pub directories: DirectoryRootsConfig,
+    pub profiles: ProfileConfig,
     pub cache: CacheConfig,
     pub permissions: PermissionPolicy,
     pub automation: AutomationConfig,
@@ -59,6 +60,11 @@ impl BrazenConfig {
         if self.cache.max_entry_bytes == 0 {
             return Err(ConfigError::Validation(
                 "cache.max_entry_bytes must be greater than zero".to_string(),
+            ));
+        }
+        if self.profiles.active_profile.trim().is_empty() {
+            return Err(ConfigError::Validation(
+                "profiles.active_profile must be non-empty".to_string(),
             ));
         }
         if self.engine.resource_limits.memory_mb == 0 {
@@ -337,6 +343,20 @@ pub struct DirectoryRootsConfig {
     pub cache_dir: DirectoryConfig,
     pub downloads_dir: DirectoryConfig,
     pub crash_dumps_dir: DirectoryConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProfileConfig {
+    pub active_profile: String,
+}
+
+impl Default for ProfileConfig {
+    fn default() -> Self {
+        Self {
+            active_profile: "default".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

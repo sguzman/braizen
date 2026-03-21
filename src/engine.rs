@@ -104,6 +104,7 @@ pub struct NavigationState {
     pub document_ready: bool,
     pub title: String,
     pub url: String,
+    pub redirect_chain: Vec<String>,
     pub favicon_url: Option<String>,
     pub metadata_summary: Option<String>,
 }
@@ -201,6 +202,7 @@ impl NullEngine {
             document_ready: false,
             title: "Platform Skeleton".to_string(),
             url: "about:blank".to_string(),
+            redirect_chain: Vec::new(),
             favicon_url: None,
             metadata_summary: None,
         };
@@ -246,6 +248,7 @@ impl BrowserEngine for NullEngine {
     fn navigate(&mut self, url: &str) {
         self.active_tab.current_url = url.to_string();
         self.navigation_state.url = url.to_string();
+        self.navigation_state.redirect_chain = vec![url.to_string()];
         self.navigation_state.title = "Loading...".to_string();
         self.navigation_state.load_progress = 0.1;
         self.navigation_state.document_ready = false;
@@ -398,6 +401,7 @@ impl ServoEngine {
             document_ready: false,
             title: "Servo Scaffold".to_string(),
             url: "about:blank".to_string(),
+            redirect_chain: Vec::new(),
             favicon_url: None,
             metadata_summary: None,
         };
@@ -452,6 +456,7 @@ impl BrowserEngine for ServoEngine {
         tracing::info!(target: "brazen::engine::servo", %url, "servo scaffold navigate");
         self.active_tab.current_url = url.to_string();
         self.navigation_state.url = url.to_string();
+        self.navigation_state.redirect_chain = vec![url.to_string()];
         self.navigation_state.title = "Loading...".to_string();
         self.navigation_state.load_progress = 0.1;
         self.navigation_state.document_ready = false;

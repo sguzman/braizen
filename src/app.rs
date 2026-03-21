@@ -8,6 +8,7 @@ use crate::engine::{
 };
 use crate::permissions::Capability;
 use crate::platform_paths::RuntimePaths;
+use crate::session::{NavigationEntry, SessionSnapshot, load_session, save_session};
 
 #[derive(Debug, Clone)]
 pub struct ShellState {
@@ -35,6 +36,7 @@ pub struct ShellState {
     pub last_security_warning: Option<(SecurityWarningKind, String)>,
     pub last_crash: Option<String>,
     pub last_crash_dump: Option<String>,
+    pub session: SessionSnapshot,
     pub event_log: Vec<String>,
     pub log_panel_open: bool,
     pub permission_panel_open: bool,
@@ -69,6 +71,13 @@ impl ShellState {
                     {
                         self.history.push(state.url.clone());
                         self.last_committed_url = Some(state.url.clone());
+                        let entry = NavigationEntry {
+                            url: state.url.clone(),
+                            title: state.title.clone(),
+                            timestamp: Utc::now().to_rfc3339(),
+                            redirect_chain: state.redirect_chain.clone(),
+                        };
+                        self.session.commit_navigation(entry);
                     }
                     self.record_event(format!(
                         "nav: {} ({:.0}%)",
@@ -104,6 +113,10 @@ impl ShellState {
                         .map(|path| format!("{url} -> {path}"))
                         .unwrap_or_else(|| url.clone());
                     self.last_download = Some(message.clone());
+                    self.session
+                        .active_tab_mut()
+                        .downloads
+                        .push(message.clone());
                     self.record_event(format!("download requested: {message}"));
                 }
                 EngineEvent::SecurityWarning { kind, url } => {
@@ -112,6 +125,7 @@ impl ShellState {
                 }
                 EngineEvent::Crashed { reason } => {
                     self.last_crash = Some(reason.clone());
+                    self.session.crash_recovery_pending = true;
                     self.record_event(format!("engine crashed: {reason}"));
                 }
                 other => {
@@ -172,6 +186,13 @@ pub fn build_shell_state(
         ),
     ];
 
+    let session = load_session(&paths.session_path).unwrap_or_else(|_| {
+        SessionSnapshot::new(
+            config.profiles.active_profile.clone(),
+            Utc::now().to_rfc3339(),
+        )
+    });
+
     let mut shell_state = ShellState {
         app_name: config.app.name.clone(),
         backend_name: engine.backend_name().to_string(),
@@ -197,10 +218,12 @@ pub fn build_shell_state(
         last_security_warning: None,
         last_crash: None,
         last_crash_dump: None,
+        session,
         event_log: vec![
             format!("loaded config for {}", config.app.name),
             format!("data dir: {}", paths.data_dir.display()),
             format!("logs dir: {}", paths.logs_dir.display()),
+            format!("session path: {}", paths.session_path.display()),
             format!(
                 "engine policy: new-window={}, devtools={}, transport={}",
                 config.engine.new_window_policy,
@@ -258,6 +281,9 @@ impl BrazenApp {
 
     fn handle_navigation(&mut self) {
         let input = self.shell_state.address_bar_input.trim().to_string();
+        self.shell_state
+            .session
+            .mark_pending_navigation(&input, Utc::now().to_rfc3339());
         let _ = dispatch_command(
             &mut self.shell_state,
             self.engine.as_mut(),
@@ -377,6 +403,16 @@ impl BrazenApp {
         }
     }
 
+    fn sync_active_tab_from_session(&mut self) {
+        let tab = self.shell_state.session.active_tab_mut().clone();
+        if self.shell_state.active_tab.current_url != tab.url
+            || self.shell_state.active_tab.title != tab.title
+        {
+            self.shell_state.active_tab.title = tab.title;
+            self.shell_state.active_tab.current_url = tab.url;
+        }
+    }
+
     fn apply_new_window_policy(&mut self) {
         let Some((url, disposition)) = self.shell_state.pending_new_window.take() else {
             return;
@@ -396,8 +432,9 @@ impl BrazenApp {
                     .record_event(format!("new window routed to current tab: {url}"));
             }
             WindowDisposition::BackgroundTab | WindowDisposition::NewWindow => {
+                self.shell_state.session.open_new_tab(&url, "New Tab");
                 self.shell_state
-                    .record_event(format!("new window deferred to future tab model: {url}"));
+                    .record_event(format!("new window opened as tab: {url}"));
             }
             WindowDisposition::Blocked => {
                 self.shell_state
@@ -469,6 +506,7 @@ impl eframe::App for BrazenApp {
                             self.engine.as_mut(),
                             AppCommand::GoBack,
                         );
+                        self.shell_state.session.go_back(Utc::now().to_rfc3339());
                     }
                 });
                 ui.add_enabled_ui(self.shell_state.can_go_forward, |ui| {
@@ -478,6 +516,7 @@ impl eframe::App for BrazenApp {
                             self.engine.as_mut(),
                             AppCommand::GoForward,
                         );
+                        self.shell_state.session.go_forward(Utc::now().to_rfc3339());
                     }
                 });
                 let response = ui.text_edit_singleline(&mut self.shell_state.address_bar_input);
@@ -524,8 +563,82 @@ impl eframe::App for BrazenApp {
             .default_width(240.0)
             .show(ctx, |ui| {
                 ui.heading("Workspace");
-                ui.label("Tab 1");
+                ui.horizontal(|ui| {
+                    if ui.button("New Tab").clicked() {
+                        self.shell_state
+                            .session
+                            .open_new_tab("about:blank", "New Tab");
+                    }
+                    if ui.button("Duplicate").clicked() {
+                        self.shell_state.session.duplicate_active_tab();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Close").clicked() {
+                        self.shell_state.session.close_active_tab();
+                    }
+                    if ui.button("Pin").clicked() {
+                        self.shell_state.session.toggle_pin_active_tab();
+                    }
+                    if ui.button("Mute").clicked() {
+                        self.shell_state.session.toggle_mute_active_tab();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Save Session").clicked() {
+                        if save_session(
+                            &self.shell_state.runtime_paths.session_path,
+                            &self.shell_state.session,
+                        )
+                        .is_ok()
+                        {
+                            self.shell_state.record_event("session saved");
+                        }
+                    }
+                    if ui.button("Load Session").clicked() {
+                        if let Ok(session) =
+                            load_session(&self.shell_state.runtime_paths.session_path)
+                        {
+                            self.shell_state.session = session;
+                            let tab = self.shell_state.session.active_tab_mut().clone();
+                            self.shell_state.address_bar_input = tab.url.clone();
+                            self.shell_state.record_event("session loaded");
+                        }
+                    }
+                });
+                ui.label(format!(
+                    "Session: {}",
+                    self.shell_state.session.session_id.0
+                ));
+                ui.label(format!("Profile: {}", self.shell_state.session.profile_id));
+                ui.label(format!(
+                    "Crash recovery: {}",
+                    if self.shell_state.session.crash_recovery_pending {
+                        "pending"
+                    } else {
+                        "clear"
+                    }
+                ));
                 ui.separator();
+                let active_window = self.shell_state.session.active_window;
+                if let Some(window) = self.shell_state.session.windows.get(active_window) {
+                    let active_index = window.active_tab;
+                    let tabs = window.tabs.clone();
+                    for (index, tab) in tabs.iter().enumerate() {
+                        let label = format!(
+                            "{}{} {}",
+                            if index == active_index { ">" } else { " " },
+                            if tab.pinned { "P" } else { " " },
+                            tab.title
+                        );
+                        if ui.selectable_label(index == active_index, label).clicked() {
+                            self.shell_state.session.set_active_tab(index);
+                            self.shell_state.address_bar_input = tab.url.clone();
+                            self.shell_state
+                                .record_event(format!("active tab: {}", tab.url));
+                        }
+                    }
+                }
                 ui.label(format!("Title: {}", self.shell_state.active_tab.title));
                 ui.label(format!("URL: {}", self.shell_state.active_tab.current_url));
                 ui.label(format!("History: {}", self.shell_state.history.len()));
@@ -652,6 +765,8 @@ impl eframe::App for BrazenApp {
             });
         });
 
+        self.sync_active_tab_from_session();
+
         if self.shell_state.log_panel_open {
             eframe::egui::TopBottomPanel::bottom("log_panel")
                 .resizable(true)
@@ -751,6 +866,8 @@ mod tests {
             cache_dir: "cache".into(),
             downloads_dir: "downloads".into(),
             crash_dumps_dir: "crash-dumps".into(),
+            active_profile_dir: "profiles/default".into(),
+            session_path: "profiles/default/session.json".into(),
         };
         let mut shell = ShellState {
             app_name: "Brazen".to_string(),
@@ -781,6 +898,7 @@ mod tests {
             last_security_warning: None,
             last_crash: None,
             last_crash_dump: None,
+            session: SessionSnapshot::new("default".to_string(), "now".to_string()),
             event_log: Vec::new(),
             log_panel_open: true,
             permission_panel_open: false,

@@ -50,6 +50,9 @@ cache_dir = "default"
 downloads_dir = "default"
 crash_dumps_dir = "default"
 
+[profiles]
+active_profile = "default"
+
 [cache]
 metadata_capture = true
 selective_body_capture = true
