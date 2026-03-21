@@ -26,5 +26,6 @@ mod tests {
         assert_eq!(frame.width, 64);
         assert_eq!(frame.height, 64);
         assert_eq!(frame.pixels.len(), 64 * 64 * 4);
+        assert_eq!(frame.stride_bytes, 64 * 4);
     }
 }

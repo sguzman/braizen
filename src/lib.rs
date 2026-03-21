@@ -6,6 +6,7 @@ pub mod engine;
 pub mod logging;
 pub mod permissions;
 pub mod platform_paths;
+pub mod rendering;
 pub mod servo_embedder;
 pub mod servo_runtime;
 #[cfg(feature = "servo-upstream")]

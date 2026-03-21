@@ -6,11 +6,13 @@ use crate::cache::{AssetQuery, AssetStore};
 use crate::commands::{AppCommand, dispatch_command};
 use crate::config::BrazenConfig;
 use crate::engine::{
-    BrowserEngine, BrowserTab, DialogKind, EngineEvent, EngineFactory, EngineStatus, FocusState,
-    InputEvent, RenderSurfaceHandle, RenderSurfaceMetadata, SecurityWarningKind, WindowDisposition,
+    AlphaMode, BrowserEngine, BrowserTab, DialogKind, EngineEvent, EngineFactory, EngineStatus,
+    FocusState, InputEvent, RenderSurfaceHandle, RenderSurfaceMetadata, SecurityWarningKind,
+    WindowDisposition,
 };
 use crate::permissions::Capability;
 use crate::platform_paths::RuntimePaths;
+use crate::rendering::normalize_pixels;
 use crate::session::{NavigationEntry, SessionSnapshot, load_session, save_session};
 
 #[derive(Debug, Clone)]
@@ -277,6 +279,8 @@ pub struct BrazenApp {
     last_frame_ms: Option<f32>,
     upload_times: VecDeque<f32>,
     last_upload_ms: Option<f32>,
+    last_pointer_pos: Option<eframe::egui::Pos2>,
+    capture_next_frame: bool,
     pending_restart_at: Option<chrono::DateTime<Utc>>,
     crash_count: u32,
     cache_store: AssetStore,
@@ -307,6 +311,7 @@ impl BrazenApp {
             &shell_state.runtime_paths,
             config.profiles.active_profile.clone(),
         );
+        let capture_next_frame = config.engine.debug_capture_next_frame;
 
         Self {
             config,
@@ -323,6 +328,8 @@ impl BrazenApp {
             last_frame_ms: None,
             upload_times: VecDeque::with_capacity(120),
             last_upload_ms: None,
+            last_pointer_pos: None,
+            capture_next_frame,
             pending_restart_at: None,
             crash_count: 0,
             cache_store,
@@ -363,6 +370,14 @@ impl BrazenApp {
         };
 
         if self.last_surface.as_ref() != Some(&metadata) {
+            tracing::info!(
+                target: "brazen::render",
+                viewport_width = metadata.viewport_width,
+                viewport_height = metadata.viewport_height,
+                pixels_per_point,
+                scale_factor = metadata.scale_factor_basis_points,
+                "render surface updated"
+            );
             self.engine.attach_surface(self.surface_handle.clone());
             self.engine.set_render_surface(metadata.clone());
             self.last_surface = Some(metadata);
@@ -373,10 +388,42 @@ impl BrazenApp {
         let Some(frame) = self.engine.render_frame() else {
             return;
         };
+        if let Some(surface) = &self.last_surface {
+            if surface.viewport_width != frame.width || surface.viewport_height != frame.height {
+                tracing::warn!(
+                    target: "brazen::render",
+                    expected_width = surface.viewport_width,
+                    expected_height = surface.viewport_height,
+                    frame_width = frame.width,
+                    frame_height = frame.height,
+                    "frame size differs from render surface"
+                );
+            }
+        }
+        let pixels = normalize_pixels(&frame, self.config.engine.debug_bypass_swizzle);
+        if pixels.is_empty() {
+            return;
+        }
         let size = [frame.width as usize, frame.height as usize];
-        let image = eframe::egui::ColorImage::from_rgba_unmultiplied(size, &frame.pixels);
+        let image = match frame.alpha_mode {
+            AlphaMode::Premultiplied => {
+                eframe::egui::ColorImage::from_rgba_premultiplied(size, &pixels)
+            }
+            AlphaMode::Straight => eframe::egui::ColorImage::from_rgba_unmultiplied(size, &pixels),
+        };
         let options = eframe::egui::TextureOptions::LINEAR;
         let upload_start = Instant::now();
+        tracing::trace!(
+            target: "brazen::render",
+            frame_number = frame.frame_number,
+            width = frame.width,
+            height = frame.height,
+            bytes = pixels.len(),
+            alpha_mode = frame.alpha_mode.as_str(),
+            pixel_format = frame.pixel_format.as_str(),
+            color_space = frame.color_space.as_str(),
+            "uploading frame to egui"
+        );
         match self.render_texture.as_mut() {
             Some(texture) => {
                 if texture.size() != size {
@@ -407,10 +454,82 @@ impl BrazenApp {
             self.frame_times.push_back(ms);
         }
         self.last_frame_instant = Some(now);
+        if self.capture_next_frame {
+            self.capture_next_frame = false;
+            self.capture_frame_to_disk(&frame, &pixels);
+        }
         match self.config.engine.frame_pacing.as_str() {
             "manual" => ctx.request_repaint_after(Duration::from_millis(16)),
             "on-demand" => {}
             _ => ctx.request_repaint(),
+        }
+    }
+
+    fn capture_frame_to_disk(&self, frame: &crate::engine::EngineFrame, pixels: &[u8]) {
+        #[cfg(not(feature = "servo-upstream"))]
+        let _ = pixels;
+        let dir = self.resolve_capture_dir();
+        if let Err(error) = std::fs::create_dir_all(&dir) {
+            tracing::warn!(
+                target: "brazen::render",
+                path = %dir.display(),
+                %error,
+                "failed to create capture directory"
+            );
+            return;
+        }
+        let filename = format!(
+            "brazen-frame-{}-{}x{}.png",
+            frame.frame_number, frame.width, frame.height
+        );
+        let path = dir.join(filename);
+        #[cfg(feature = "servo-upstream")]
+        {
+            let image = libservo::RgbaImage::from_raw(frame.width, frame.height, pixels.to_vec());
+            match image {
+                Some(image) => {
+                    if let Err(error) = image.save(&path) {
+                        tracing::warn!(
+                            target: "brazen::render",
+                            path = %path.display(),
+                            %error,
+                            "failed to write frame capture"
+                        );
+                    } else {
+                        tracing::info!(
+                            target: "brazen::render",
+                            path = %path.display(),
+                            "saved frame capture"
+                        );
+                    }
+                }
+                None => tracing::warn!(
+                    target: "brazen::render",
+                    path = %path.display(),
+                    "failed to build capture image"
+                ),
+            }
+        }
+        #[cfg(not(feature = "servo-upstream"))]
+        {
+            tracing::warn!(
+                target: "brazen::render",
+                path = %path.display(),
+                "frame capture requires the servo-upstream feature"
+            );
+        }
+    }
+
+    fn resolve_capture_dir(&self) -> std::path::PathBuf {
+        let choice = self.config.engine.debug_capture_dir.trim();
+        match choice {
+            "" | "logs" => self.shell_state.runtime_paths.logs_dir.clone(),
+            "data" => self.shell_state.runtime_paths.data_dir.clone(),
+            "profiles" => self.shell_state.runtime_paths.profiles_dir.clone(),
+            "cache" => self.shell_state.runtime_paths.cache_dir.clone(),
+            "downloads" => self.shell_state.runtime_paths.downloads_dir.clone(),
+            "crash_dumps" => self.shell_state.runtime_paths.crash_dumps_dir.clone(),
+            value => std::path::PathBuf::from(value),
         }
     }
 
@@ -436,12 +555,17 @@ impl BrazenApp {
         for event in input.raw.events {
             match event {
                 eframe::egui::Event::PointerMoved(pos) => {
+                    self.last_pointer_pos = Some(pos);
                     self.engine
                         .handle_input(InputEvent::PointerMove { x: pos.x, y: pos.y });
                 }
                 eframe::egui::Event::PointerButton {
-                    button, pressed, ..
+                    pos,
+                    button,
+                    pressed,
+                    ..
                 } => {
+                    self.last_pointer_pos = Some(pos);
                     let button_id = match button {
                         eframe::egui::PointerButton::Primary => 0,
                         eframe::egui::PointerButton::Secondary => 1,
@@ -1064,7 +1188,21 @@ impl eframe::App for BrazenApp {
                 self.config.engine.render_mode, self.config.engine.frame_pacing
             ));
             if let Some(texture) = &self.render_texture {
-                ui.add(eframe::egui::Image::from_texture(texture).shrink_to_fit());
+                let response =
+                    ui.add(eframe::egui::Image::from_texture(texture).shrink_to_fit());
+                if self.config.engine.debug_pointer_overlay {
+                    if let Some(pos) = self.last_pointer_pos {
+                        if response.rect.contains(pos) {
+                            let painter = ui.painter().with_clip_rect(response.rect);
+                            let stroke =
+                                eframe::egui::Stroke::new(1.0, eframe::egui::Color32::YELLOW);
+                            let offset = eframe::egui::vec2(8.0, 0.0);
+                            painter.line_segment([pos - offset, pos + offset], stroke);
+                            let offset = eframe::egui::vec2(0.0, 8.0);
+                            painter.line_segment([pos - offset, pos + offset], stroke);
+                        }
+                    }
+                }
             }
             ui.add_space(12.0);
             ui.group(|ui| {

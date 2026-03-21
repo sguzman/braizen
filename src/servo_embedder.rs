@@ -3,13 +3,16 @@ use std::path::PathBuf;
 
 use crate::config::EngineConfig;
 use crate::engine::{
-    EngineFrame, FocusState, InputEvent, RenderSurfaceHandle, RenderSurfaceMetadata,
+    AlphaMode, ColorSpace, EngineFrame, FocusState, InputEvent, PixelFormat, RenderSurfaceHandle,
+    RenderSurfaceMetadata,
 };
+#[cfg(feature = "servo-upstream")]
+use crate::rendering::frame_checksum;
 use crate::servo_runtime::{
     FramePacing, FrameScheduler, RenderMode, ServoRuntimeConfig, ServoWindowAdapter,
 };
 #[cfg(feature = "servo-upstream")]
-use crate::servo_upstream::{ServoUpstreamRuntime, UpstreamSnapshot};
+use crate::servo_upstream::{ServoUpstreamConfig, ServoUpstreamRuntime, UpstreamSnapshot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServoProcessModel {
@@ -32,6 +35,10 @@ pub struct ServoEmbedderConfig {
     pub gfx_backend: String,
     pub source_path: Option<PathBuf>,
     pub verbose_logging: bool,
+    pub pixel_format: PixelFormat,
+    pub alpha_mode: AlphaMode,
+    pub color_space: ColorSpace,
+    pub enable_pixel_probe: bool,
     pub runtime: ServoRuntimeConfig,
 }
 
@@ -55,6 +62,10 @@ impl ServoEmbedderConfig {
                 })
                 .map(PathBuf::from),
             verbose_logging: config.verbose_logging,
+            pixel_format: PixelFormat::from_str(&config.pixel_format),
+            alpha_mode: AlphaMode::from_str(&config.alpha_mode),
+            color_space: ColorSpace::from_str(&config.color_space),
+            enable_pixel_probe: config.debug_pixel_probe,
             runtime: ServoRuntimeConfig::from_engine_config(config),
         }
     }
@@ -169,6 +180,8 @@ pub struct ServoEmbedder {
     #[cfg(feature = "servo-upstream")]
     pub last_snapshot: Option<UpstreamSnapshot>,
     pub last_pointer: (f32, f32),
+    pub input_scale: f32,
+    pub last_frame_checksum: Option<u64>,
 }
 
 impl ServoEmbedder {
@@ -193,6 +206,8 @@ impl ServoEmbedder {
             #[cfg(feature = "servo-upstream")]
             last_snapshot: None,
             last_pointer: (0.0, 0.0),
+            input_scale: 1.0,
+            last_frame_checksum: None,
         }
     }
 
@@ -245,6 +260,7 @@ impl ServoEmbedder {
             height = metadata.viewport_height,
             "attach surface"
         );
+        self.input_scale = metadata.scale_factor_basis_points as f32 / 100.0;
         self.window = Some(ServoWindowAdapter::from_metadata(&metadata));
         self.surface = Some(SurfaceSwapChain::new(surface, metadata));
         self.frame_scheduler.request_frame();
@@ -253,6 +269,7 @@ impl ServoEmbedder {
     }
 
     pub fn update_surface(&mut self, metadata: RenderSurfaceMetadata) {
+        self.input_scale = metadata.scale_factor_basis_points as f32 / 100.0;
         if let Some(surface) = self.surface.as_mut() {
             surface.resize(&metadata);
         }
@@ -291,8 +308,8 @@ impl ServoEmbedder {
 
     pub fn render_frame(&mut self) -> Option<EngineFrame> {
         #[cfg(feature = "servo-upstream")]
-        if let Some(frame) = self.render_upstream_frame() {
-            return Some(frame);
+        if self.upstream.is_some() {
+            return self.render_upstream_frame();
         }
         if !self.frame_scheduler.should_render() {
             return None;
@@ -328,6 +345,10 @@ impl ServoEmbedder {
             width,
             height,
             frame_number: self.frame_counter,
+            stride_bytes: (width as usize).saturating_mul(4),
+            pixel_format: PixelFormat::Rgba8,
+            alpha_mode: AlphaMode::Straight,
+            color_space: ColorSpace::Srgb,
             pixels,
         })
     }
@@ -365,14 +386,16 @@ impl ServoEmbedder {
         }
         match event {
             InputEvent::PointerMove { x, y } => {
-                self.last_pointer = (*x, *y);
+                let scaled = (*x * self.input_scale, *y * self.input_scale);
+                self.last_pointer = scaled;
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
-                    upstream.handle_mouse_move(*x, *y);
+                    upstream.handle_mouse_move(scaled.0, scaled.1);
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = (x, y);
             }
-            InputEvent::PointerDown { button } =>
-            {
+            InputEvent::PointerDown { button } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
                     upstream.handle_mouse_button(
@@ -382,9 +405,10 @@ impl ServoEmbedder {
                         self.last_pointer.1,
                     );
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = button;
             }
-            InputEvent::PointerUp { button } =>
-            {
+            InputEvent::PointerUp { button } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
                     upstream.handle_mouse_button(
@@ -394,48 +418,64 @@ impl ServoEmbedder {
                         self.last_pointer.1,
                     );
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = button;
             }
-            InputEvent::Scroll { delta_x, delta_y } =>
-            {
+            InputEvent::Scroll { delta_x, delta_y } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
+                    let scaled_x = *delta_x * self.input_scale;
+                    let scaled_y = *delta_y * self.input_scale;
+                    tracing::trace!(
+                        target: "brazen::servo",
+                        delta_x = scaled_x,
+                        delta_y = scaled_y,
+                        scale = self.input_scale,
+                        "forwarding scroll delta"
+                    );
                     upstream.handle_wheel(
-                        *delta_x,
-                        *delta_y,
+                        scaled_x,
+                        scaled_y,
                         self.last_pointer.0,
                         self.last_pointer.1,
                     );
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = (delta_x, delta_y);
             }
-            InputEvent::Zoom { delta } =>
-            {
+            InputEvent::Zoom { delta } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
-                    upstream.handle_wheel(0.0, *delta, self.last_pointer.0, self.last_pointer.1);
+                    let scaled = *delta * self.input_scale;
+                    upstream.handle_wheel(0.0, scaled, self.last_pointer.0, self.last_pointer.1);
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = delta;
             }
-            InputEvent::KeyDown { key, modifiers } =>
-            {
+            InputEvent::KeyDown { key, modifiers } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
                     upstream.handle_keyboard(key, true, *modifiers);
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = (key, modifiers);
             }
-            InputEvent::KeyUp { key, modifiers } =>
-            {
+            InputEvent::KeyUp { key, modifiers } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
                     upstream.handle_keyboard(key, false, *modifiers);
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = (key, modifiers);
             }
-            InputEvent::TextInput { text } =>
-            {
+            InputEvent::TextInput { text } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
                     upstream.handle_ime(text.clone());
                 }
+                #[cfg(not(feature = "servo-upstream"))]
+                let _ = text;
             }
-            _ => {}
         }
         self.frame_scheduler.request_frame();
     }
@@ -535,9 +575,16 @@ impl ServoEmbedder {
         let Some(surface) = &self.surface else {
             return;
         };
+        let upstream_config = ServoUpstreamConfig {
+            pixel_format: self.config.pixel_format,
+            alpha_mode: self.config.alpha_mode,
+            color_space: self.config.color_space,
+            enable_pixel_probe: self.config.enable_pixel_probe,
+        };
         match ServoUpstreamRuntime::new(
             surface.metadata.viewport_width,
             surface.metadata.viewport_height,
+            upstream_config,
         ) {
             Ok(runtime) => {
                 self.upstream = Some(runtime);
@@ -557,26 +604,52 @@ impl ServoEmbedder {
 
     #[cfg(feature = "servo-upstream")]
     fn render_upstream_frame(&mut self) -> Option<EngineFrame> {
-        let upstream = self.upstream.as_ref()?;
+        let upstream = self.upstream.as_mut()?;
         upstream.spin();
-        let pixels = upstream.render_frame()?;
-        let width = self
+        let frame = upstream.render_frame()?;
+        if frame.width == 0 || frame.height == 0 {
+            return None;
+        }
+        let expected_width = self
             .surface
             .as_ref()
             .map(|surface| surface.metadata.viewport_width)
-            .unwrap_or(0);
-        let height = self
+            .unwrap_or(frame.width);
+        let expected_height = self
             .surface
             .as_ref()
             .map(|surface| surface.metadata.viewport_height)
-            .unwrap_or(0);
+            .unwrap_or(frame.height);
+        if frame.width != expected_width || frame.height != expected_height {
+            tracing::warn!(
+                target: "brazen::servo",
+                expected_width,
+                expected_height,
+                frame_width = frame.width,
+                frame_height = frame.height,
+                "upstream frame size mismatch"
+            );
+        }
+        let checksum = frame_checksum(&frame.pixels);
+        if self.last_frame_checksum == Some(checksum) {
+            tracing::debug!(
+                target: "brazen::servo",
+                checksum,
+                "duplicate upstream frame detected"
+            );
+        }
+        self.last_frame_checksum = Some(checksum);
         self.last_snapshot = Some(upstream.snapshot());
         self.frame_counter = self.frame_counter.wrapping_add(1);
         Some(EngineFrame {
-            width,
-            height,
+            width: frame.width,
+            height: frame.height,
             frame_number: self.frame_counter,
-            pixels,
+            stride_bytes: frame.stride_bytes,
+            pixel_format: frame.pixel_format,
+            alpha_mode: frame.alpha_mode,
+            color_space: frame.color_space,
+            pixels: frame.pixels,
         })
     }
 

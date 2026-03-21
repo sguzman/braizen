@@ -77,6 +77,13 @@ The repo does not depend on the crates.io `servo` package because that package i
 When building with `--features servo`, the build script expects `BRAZEN_SERVO_SOURCE` to point at a local Servo checkout.
 The helper script `scripts/fetch_servo.sh` can populate `vendor/servo` from the pinned tag listed in `docs/servo/version.md`.
 
+## Rendering Debug Checklist
+
+- Enable `engine.debug_pixel_probe` and confirm the detected pixel format matches expectation.
+- Toggle `engine.debug_bypass_swizzle` to A/B the color channel order.
+- Set `engine.debug_capture_next_frame = true` and inspect the saved PNG in `engine.debug_capture_dir`.
+- Enable `engine.debug_pointer_overlay` to verify pointer coordinates align with visual targets.
+
 ## Roadmaps
 
 The roadmap set lives at [`docs/roadmap.md`](/win/linux/Code/rust/brazen/docs/roadmap.md). It now fans out into separate files for each major dimension: shell/workspace UX, Servo integration, session model, capability permissions, security/audit, local connectors, automation APIs, cache/asset capture, extraction, knowledge workflows, media/reading/TTS, persistence/profiles, and observability/quality.

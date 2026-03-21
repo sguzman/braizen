@@ -3,14 +3,14 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::engine::KeyModifiers;
+use crate::engine::{AlphaMode, ColorSpace, KeyModifiers, PixelFormat};
 use dpi::PhysicalSize;
 use libservo::{
-    Code, CompositionEvent, DeviceIntPoint, DeviceIntRect, DeviceIntSize, EventLoopWaker, ImeEvent,
-    InputEvent, Key, KeyState, KeyboardEvent, LoadStatus, Location, Modifiers, MouseButton,
-    MouseButtonAction, MouseButtonEvent, MouseMoveEvent, RenderingContext, Servo, ServoBuilder,
-    ServoDelegate, SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate,
-    WebViewPoint, WheelDelta, WheelEvent, WheelMode,
+    Code, CompositionEvent, DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint,
+    EventLoopWaker, ImeEvent, InputEvent, Key, KeyState, KeyboardEvent, LoadStatus, Location,
+    Modifiers, MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent, RenderingContext,
+    Servo, ServoBuilder, ServoDelegate, SoftwareRenderingContext, WebView, WebViewBuilder,
+    WebViewDelegate, WebViewPoint, WheelDelta, WheelEvent, WheelMode,
 };
 use tracing_log::LogTracer;
 use url::Url;
@@ -25,6 +25,31 @@ pub struct UpstreamSnapshot {
     pub history_index: usize,
     pub animating: bool,
     pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpstreamFrame {
+    pub width: u32,
+    pub height: u32,
+    pub stride_bytes: usize,
+    pub pixel_format: PixelFormat,
+    pub alpha_mode: AlphaMode,
+    pub color_space: ColorSpace,
+    pub pixels: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServoUpstreamConfig {
+    pub pixel_format: PixelFormat,
+    pub alpha_mode: AlphaMode,
+    pub color_space: ColorSpace,
+    pub enable_pixel_probe: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PixelProbeState {
+    pending: bool,
+    test_url: Url,
 }
 
 impl Default for UpstreamSnapshot {
@@ -156,11 +181,16 @@ pub struct ServoUpstreamRuntime {
     frame_ready: Rc<Cell<bool>>,
     devtools_endpoint: Rc<RefCell<Option<String>>>,
     last_error: Rc<RefCell<Option<String>>>,
+    pixel_format: Cell<PixelFormat>,
+    alpha_mode: AlphaMode,
+    color_space: ColorSpace,
+    pixel_probe: Option<PixelProbeState>,
 }
 
 impl ServoUpstreamRuntime {
-    pub fn new(width: u32, height: u32) -> Result<Self, String> {
+    pub fn new(width: u32, height: u32, config: ServoUpstreamConfig) -> Result<Self, String> {
         let _ = LogTracer::init();
+        let frame_ready = Rc::new(Cell::new(true));
         let rendering_context = Rc::new(
             SoftwareRenderingContext::new(PhysicalSize::new(width, height))
                 .map_err(|error| format!("rendering context error: {error:?}"))?,
@@ -171,7 +201,6 @@ impl ServoUpstreamRuntime {
             }))
             .build();
         let snapshot = Rc::new(RefCell::new(UpstreamSnapshot::default()));
-        let frame_ready = Rc::new(Cell::new(false));
         let devtools_endpoint = Rc::new(RefCell::new(None));
         let last_error = Rc::new(RefCell::new(None));
         let delegate = Rc::new(BrazenWebViewDelegate::new(
@@ -187,6 +216,29 @@ impl ServoUpstreamRuntime {
             .delegate(delegate)
             .build();
         webview.show();
+
+        let pixel_probe = if config.enable_pixel_probe {
+            match Url::parse("data:text/html,<style>body{margin:0;background:#ff0000}</style>") {
+                Ok(url) => {
+                    webview.load(url.clone());
+                    Some(PixelProbeState {
+                        pending: true,
+                        test_url: url,
+                    })
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "brazen::servo::probe",
+                        %error,
+                        "failed to build pixel probe url"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(Self {
             servo,
             webview,
@@ -195,6 +247,10 @@ impl ServoUpstreamRuntime {
             frame_ready,
             devtools_endpoint,
             last_error,
+            pixel_format: Cell::new(config.pixel_format),
+            alpha_mode: config.alpha_mode,
+            color_space: config.color_space,
+            pixel_probe,
         })
     }
 
@@ -232,28 +288,88 @@ impl ServoUpstreamRuntime {
         self.servo.spin_event_loop();
     }
 
-    pub fn render_frame(&self) -> Option<Vec<u8>> {
+    pub fn render_frame(&mut self) -> Option<UpstreamFrame> {
         if !self.frame_ready.replace(false) {
             return None;
         }
+        let size = self.rendering_context.size();
+        if size.width == 0 || size.height == 0 {
+            return None;
+        }
+        self.rendering_context.prepare_for_rendering();
         self.webview.paint();
         self.rendering_context.present();
-        let size = self.rendering_context.size();
         let rect = DeviceIntRect::new(
             DeviceIntPoint::new(0, 0),
             DeviceIntSize::new(size.width as i32, size.height as i32),
         );
+        tracing::trace!(
+            target: "brazen::servo::render",
+            width = size.width,
+            height = size.height,
+            "readback render surface"
+        );
         let image = self.rendering_context.read_to_image(rect)?;
-        Some(image.into_raw())
+        if let Some(probe) = &mut self.pixel_probe {
+            if probe.pending {
+                self.apply_pixel_probe(probe, &image);
+            }
+        }
+        let pixels = image.into_raw();
+        let stride_bytes = size.width as usize * 4;
+        let pixel_format = self.pixel_format.get();
+        let alpha_mode = self.alpha_mode;
+        let color_space = self.color_space;
+        Some(UpstreamFrame {
+            width: size.width,
+            height: size.height,
+            stride_bytes,
+            pixel_format,
+            alpha_mode,
+            color_space,
+            pixels,
+        })
     }
 
     pub fn handle_input(&self, event: InputEvent) {
         self.webview.notify_input_event(event);
     }
 
+    fn apply_pixel_probe(&mut self, probe: &mut PixelProbeState, image: &libservo::RgbaImage) {
+        let width = image.width();
+        let height = image.height();
+        if width == 0 || height == 0 {
+            return;
+        }
+        let raw = image.as_raw();
+        let idx = ((height / 2) * width + (width / 2)) as usize * 4;
+        if idx + 3 >= raw.len() {
+            return;
+        }
+        let r = raw[idx];
+        let g = raw[idx + 1];
+        let b = raw[idx + 2];
+        let detected = if r > 200 && g < 50 && b < 50 {
+            PixelFormat::Rgba8
+        } else if b > 200 && r < 50 && g < 50 {
+            PixelFormat::Bgra8
+        } else {
+            self.pixel_format.get()
+        };
+        self.pixel_format.set(detected);
+        probe.pending = false;
+        tracing::info!(
+            target: "brazen::servo::probe",
+            expected_url = %probe.test_url,
+            sample = format!("{r},{g},{b}"),
+            format = detected.as_str(),
+            "pixel probe complete"
+        );
+    }
+
     pub fn handle_mouse_move(&self, x: f32, y: f32) {
         self.handle_input(InputEvent::MouseMove(MouseMoveEvent::new(
-            WebViewPoint::new(x as f64, y as f64),
+            WebViewPoint::Device(DevicePoint::new(x, y)),
         )));
     }
 
@@ -266,7 +382,7 @@ impl ServoUpstreamRuntime {
         self.handle_input(InputEvent::MouseButton(MouseButtonEvent::new(
             action,
             MouseButton::from(button),
-            WebViewPoint::new(x as f64, y as f64),
+            WebViewPoint::Device(DevicePoint::new(x, y)),
         )));
     }
 
@@ -279,7 +395,7 @@ impl ServoUpstreamRuntime {
         };
         self.handle_input(InputEvent::Wheel(WheelEvent::new(
             delta,
-            WebViewPoint::new(x as f64, y as f64),
+            WebViewPoint::Device(DevicePoint::new(x, y)),
         )));
     }
 

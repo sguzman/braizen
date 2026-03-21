@@ -21,3 +21,9 @@ Frame pacing is controlled by `engine.frame_pacing`:
 - `vsync`: repaint every frame.
 - `manual`: throttled to ~60fps.
 - `on-demand`: render only after input/navigation events.
+
+## Pixel Format
+
+Servo readback currently uses OpenGL `read_pixels` with `RGBA`/`UNSIGNED_BYTE`, producing
+an RGBA8 buffer. Brazen treats the buffer as sRGB with straight (un-premultiplied) alpha
+unless overridden via the engine debug settings.

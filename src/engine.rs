@@ -119,6 +119,72 @@ pub struct RenderSurfaceMetadata {
     pub scale_factor_basis_points: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PixelFormat {
+    Rgba8,
+    Bgra8,
+}
+
+impl PixelFormat {
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "bgra8" => Self::Bgra8,
+            _ => Self::Rgba8,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Rgba8 => "rgba8",
+            Self::Bgra8 => "bgra8",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlphaMode {
+    Straight,
+    Premultiplied,
+}
+
+impl AlphaMode {
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "premultiplied" => Self::Premultiplied,
+            _ => Self::Straight,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Straight => "straight",
+            Self::Premultiplied => "premultiplied",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorSpace {
+    Srgb,
+    Linear,
+}
+
+impl ColorSpace {
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "linear" => Self::Linear,
+            _ => Self::Srgb,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Srgb => "srgb",
+            Self::Linear => "linear",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderSurface {
     pub handle: RenderSurfaceHandle,
@@ -130,6 +196,10 @@ pub struct EngineFrame {
     pub width: u32,
     pub height: u32,
     pub frame_number: u64,
+    pub stride_bytes: usize,
+    pub pixel_format: PixelFormat,
+    pub alpha_mode: AlphaMode,
+    pub color_space: ColorSpace,
     pub pixels: Vec<u8>,
 }
 

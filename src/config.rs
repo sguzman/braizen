@@ -111,6 +111,30 @@ impl BrazenConfig {
                 ));
             }
         }
+        match self.engine.pixel_format.as_str() {
+            "rgba8" | "bgra8" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "engine.pixel_format must be rgba8 or bgra8".to_string(),
+                ));
+            }
+        }
+        match self.engine.alpha_mode.as_str() {
+            "straight" | "premultiplied" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "engine.alpha_mode must be straight or premultiplied".to_string(),
+                ));
+            }
+        }
+        match self.engine.color_space.as_str() {
+            "srgb" | "linear" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "engine.color_space must be srgb or linear".to_string(),
+                ));
+            }
+        }
         match self.engine.frame_pacing.as_str() {
             "vsync" | "manual" | "on-demand" => {}
             _ => {
@@ -281,6 +305,14 @@ pub struct EngineConfig {
     pub render_mode: String,
     pub webrender_backend: String,
     pub frame_pacing: String,
+    pub pixel_format: String,
+    pub alpha_mode: String,
+    pub color_space: String,
+    pub debug_bypass_swizzle: bool,
+    pub debug_capture_next_frame: bool,
+    pub debug_capture_dir: String,
+    pub debug_pixel_probe: bool,
+    pub debug_pointer_overlay: bool,
     pub devtools_enabled: bool,
     pub devtools_transport: String,
     pub resource_limits: ResourceLimits,
@@ -304,6 +336,14 @@ impl Default for EngineConfig {
             render_mode: "cpu-readback".to_string(),
             webrender_backend: "gl".to_string(),
             frame_pacing: "vsync".to_string(),
+            pixel_format: "rgba8".to_string(),
+            alpha_mode: "straight".to_string(),
+            color_space: "srgb".to_string(),
+            debug_bypass_swizzle: false,
+            debug_capture_next_frame: false,
+            debug_capture_dir: "logs".to_string(),
+            debug_pixel_probe: false,
+            debug_pointer_overlay: false,
             devtools_enabled: false,
             devtools_transport: "none".to_string(),
             resource_limits: ResourceLimits::default(),
