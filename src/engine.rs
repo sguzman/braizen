@@ -38,6 +38,27 @@ pub enum ClipboardRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DialogKind {
+    Alert,
+    Confirm,
+    Prompt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WindowDisposition {
+    ForegroundTab,
+    BackgroundTab,
+    NewWindow,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecurityWarningKind {
+    MixedContent,
+    TlsError,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderSurfaceHandle {
     pub id: u64,
     pub label: String,
@@ -93,6 +114,33 @@ pub enum EngineEvent {
     NavigationRequested(String),
     NavigationStateUpdated(NavigationState),
     ClipboardRequested(ClipboardRequest),
+    PopupRequested {
+        url: String,
+        disposition: WindowDisposition,
+    },
+    DialogRequested {
+        kind: DialogKind,
+        message: String,
+    },
+    ContextMenuRequested {
+        x: f32,
+        y: f32,
+    },
+    NewWindowRequested {
+        url: String,
+        disposition: WindowDisposition,
+    },
+    DownloadRequested {
+        url: String,
+        suggested_path: Option<String>,
+    },
+    SecurityWarning {
+        kind: SecurityWarningKind,
+        url: String,
+    },
+    Crashed {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +174,7 @@ pub trait BrowserEngine: Send {
     fn suspend(&mut self);
     fn resume(&mut self);
     fn shutdown(&mut self);
+    fn inject_event(&mut self, event: EngineEvent);
     fn take_events(&mut self) -> Vec<EngineEvent>;
 }
 
@@ -294,6 +343,10 @@ impl BrowserEngine for NullEngine {
     fn shutdown(&mut self) {
         self.status = EngineStatus::NoEngine;
         self.events.push(EngineEvent::StatusChanged(self.status()));
+    }
+
+    fn inject_event(&mut self, event: EngineEvent) {
+        self.events.push(event);
     }
 
     fn take_events(&mut self) -> Vec<EngineEvent> {
@@ -488,6 +541,10 @@ impl BrowserEngine for ServoEngine {
     fn shutdown(&mut self) {
         self.status = EngineStatus::NoEngine;
         self.events.push(EngineEvent::StatusChanged(self.status()));
+    }
+
+    fn inject_event(&mut self, event: EngineEvent) {
+        self.events.push(event);
     }
 
     fn take_events(&mut self) -> Vec<EngineEvent> {

@@ -25,7 +25,21 @@ ansi = true
 process_model = "single-process"
 gfx_backend = "gl"
 servo_source = ""
+servo_source_tag = "v0.0.4"
+servo_source_rev = "b73ae02"
 enable_multiprocess = false
+new_window_policy = "same-tab"
+devtools_enabled = false
+devtools_transport = "none"
+security_warnings = true
+profile_isolation = false
+storage_policy = "profile-scoped"
+service_worker_policy = "default"
+
+[engine.resource_limits]
+memory_mb = 2048
+cpu_ms = 200
+max_tabs = 32
 
 [directories]
 # Use "default" to resolve through platform-specific app data directories.
@@ -33,6 +47,8 @@ data_dir = "default"
 logs_dir = "default"
 profiles_dir = "default"
 cache_dir = "default"
+downloads_dir = "default"
+crash_dumps_dir = "default"
 
 [cache]
 metadata_capture = true

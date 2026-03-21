@@ -19,6 +19,8 @@ pub struct RuntimePaths {
     pub logs_dir: PathBuf,
     pub profiles_dir: PathBuf,
     pub cache_dir: PathBuf,
+    pub downloads_dir: PathBuf,
+    pub crash_dumps_dir: PathBuf,
 }
 
 #[derive(Debug, Error)]
@@ -78,6 +80,8 @@ impl PlatformPaths {
         let logs_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.logs_dir);
         let profiles_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.profiles_dir);
         let cache_dir = self.resolve_dir(&base_dir, &self.cache_root, &dirs.cache_dir);
+        let downloads_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.downloads_dir);
+        let crash_dumps_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.crash_dumps_dir);
 
         Ok(RuntimePaths {
             config_path: config_path.to_path_buf(),
@@ -85,6 +89,8 @@ impl PlatformPaths {
             logs_dir,
             profiles_dir,
             cache_dir,
+            downloads_dir,
+            crash_dumps_dir,
         })
     }
 

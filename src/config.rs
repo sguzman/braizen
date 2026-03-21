@@ -61,6 +61,34 @@ impl BrazenConfig {
                 "cache.max_entry_bytes must be greater than zero".to_string(),
             ));
         }
+        if self.engine.resource_limits.memory_mb == 0 {
+            return Err(ConfigError::Validation(
+                "engine.resource_limits.memory_mb must be greater than zero".to_string(),
+            ));
+        }
+        if self.engine.resource_limits.max_tabs == 0 {
+            return Err(ConfigError::Validation(
+                "engine.resource_limits.max_tabs must be greater than zero".to_string(),
+            ));
+        }
+        match self.engine.new_window_policy.as_str() {
+            "same-tab" | "new-tab" | "block" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "engine.new_window_policy must be same-tab, new-tab, or block".to_string(),
+                ));
+            }
+        }
+        if self.engine.devtools_enabled {
+            match self.engine.devtools_transport.as_str() {
+                "local-socket" | "tcp" => {}
+                _ => {
+                    return Err(ConfigError::Validation(
+                        "engine.devtools_transport must be local-socket or tcp when devtools are enabled".to_string(),
+                    ))
+                }
+            }
+        }
         if self.automation.enabled {
             let url = Url::parse(&self.automation.bind).map_err(|error| {
                 ConfigError::Validation(format!("automation.bind must be a valid URL: {error}"))
@@ -215,7 +243,17 @@ pub struct EngineConfig {
     pub process_model: String,
     pub gfx_backend: String,
     pub servo_source: Option<String>,
+    pub servo_source_tag: String,
+    pub servo_source_rev: String,
     pub enable_multiprocess: bool,
+    pub new_window_policy: String,
+    pub devtools_enabled: bool,
+    pub devtools_transport: String,
+    pub resource_limits: ResourceLimits,
+    pub security_warnings: bool,
+    pub profile_isolation: bool,
+    pub storage_policy: String,
+    pub service_worker_policy: String,
 }
 
 impl Default for EngineConfig {
@@ -224,7 +262,35 @@ impl Default for EngineConfig {
             process_model: "single-process".to_string(),
             gfx_backend: "gl".to_string(),
             servo_source: None,
+            servo_source_tag: "v0.0.4".to_string(),
+            servo_source_rev: "b73ae02".to_string(),
             enable_multiprocess: false,
+            new_window_policy: "same-tab".to_string(),
+            devtools_enabled: false,
+            devtools_transport: "none".to_string(),
+            resource_limits: ResourceLimits::default(),
+            security_warnings: true,
+            profile_isolation: false,
+            storage_policy: "profile-scoped".to_string(),
+            service_worker_policy: "default".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ResourceLimits {
+    pub memory_mb: u32,
+    pub cpu_ms: u32,
+    pub max_tabs: u32,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            memory_mb: 2048,
+            cpu_ms: 200,
+            max_tabs: 32,
         }
     }
 }
@@ -269,6 +335,8 @@ pub struct DirectoryRootsConfig {
     pub logs_dir: DirectoryConfig,
     pub profiles_dir: DirectoryConfig,
     pub cache_dir: DirectoryConfig,
+    pub downloads_dir: DirectoryConfig,
+    pub crash_dumps_dir: DirectoryConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

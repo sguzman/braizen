@@ -92,6 +92,14 @@ fn runtime_paths_resolve_relative_to_config_directory() {
         runtime.cache_dir,
         std::path::PathBuf::from("/tmp/brazen-cache")
     );
+    assert_eq!(
+        runtime.downloads_dir,
+        std::path::PathBuf::from("/tmp/brazen-data")
+    );
+    assert_eq!(
+        runtime.crash_dumps_dir,
+        std::path::PathBuf::from("/tmp/brazen-data")
+    );
 }
 
 #[test]
@@ -127,6 +135,8 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         logs_dir: dir.path().join("logs"),
         profiles_dir: dir.path().join("profiles"),
         cache_dir: dir.path().join("cache"),
+        downloads_dir: dir.path().join("downloads"),
+        crash_dumps_dir: dir.path().join("crash-dumps"),
     };
     let mut shell = brazen::ShellState {
         app_name: "Brazen".to_string(),
@@ -149,6 +159,14 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         history: Vec::new(),
         last_committed_url: None,
         was_minimized: false,
+        pending_popup: None,
+        pending_dialog: None,
+        pending_context_menu: None,
+        pending_new_window: None,
+        last_download: None,
+        last_security_warning: None,
+        last_crash: None,
+        last_crash_dump: None,
         event_log: Vec::new(),
         log_panel_open: true,
         permission_panel_open: false,

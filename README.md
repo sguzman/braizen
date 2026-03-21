@@ -75,6 +75,7 @@ cargo build
 The repo does not depend on the crates.io `servo` package because that package is not the browser engine integration path. When live embedding work starts, the backend should pin the official Servo source revision explicitly and keep that dependency isolated behind the `servo` feature.
 
 When building with `--features servo`, the build script expects `BRAZEN_SERVO_SOURCE` to point at a local Servo checkout.
+The helper script `scripts/fetch_servo.sh` can populate `vendor/servo` from the pinned tag listed in `docs/servo/version.md`.
 
 ## Roadmaps
 

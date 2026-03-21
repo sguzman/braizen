@@ -1,8 +1,10 @@
+use chrono::Utc;
+
 use crate::commands::{AppCommand, dispatch_command};
 use crate::config::BrazenConfig;
 use crate::engine::{
-    BrowserEngine, BrowserTab, EngineEvent, EngineFactory, EngineStatus, FocusState, InputEvent,
-    RenderSurfaceHandle, RenderSurfaceMetadata,
+    BrowserEngine, BrowserTab, DialogKind, EngineEvent, EngineFactory, EngineStatus, FocusState,
+    InputEvent, RenderSurfaceHandle, RenderSurfaceMetadata, SecurityWarningKind, WindowDisposition,
 };
 use crate::permissions::Capability;
 use crate::platform_paths::RuntimePaths;
@@ -25,6 +27,14 @@ pub struct ShellState {
     pub history: Vec<String>,
     pub last_committed_url: Option<String>,
     pub was_minimized: bool,
+    pub pending_popup: Option<(String, WindowDisposition)>,
+    pub pending_dialog: Option<(DialogKind, String)>,
+    pub pending_context_menu: Option<(f32, f32)>,
+    pub pending_new_window: Option<(String, WindowDisposition)>,
+    pub last_download: Option<String>,
+    pub last_security_warning: Option<(SecurityWarningKind, String)>,
+    pub last_crash: Option<String>,
+    pub last_crash_dump: Option<String>,
     pub event_log: Vec<String>,
     pub log_panel_open: bool,
     pub permission_panel_open: bool,
@@ -68,6 +78,41 @@ impl ShellState {
                 }
                 EngineEvent::ClipboardRequested(request) => {
                     self.record_event(format!("clipboard request: {request:?}"));
+                }
+                EngineEvent::PopupRequested { url, disposition } => {
+                    self.pending_popup = Some((url.clone(), disposition.clone()));
+                    self.record_event(format!("popup requested: {url} ({disposition:?})"));
+                }
+                EngineEvent::DialogRequested { kind, message } => {
+                    self.pending_dialog = Some((kind.clone(), message.clone()));
+                    self.record_event(format!("dialog requested: {kind:?}"));
+                }
+                EngineEvent::ContextMenuRequested { x, y } => {
+                    self.pending_context_menu = Some((x, y));
+                    self.record_event(format!("context menu requested: {x:.0},{y:.0}"));
+                }
+                EngineEvent::NewWindowRequested { url, disposition } => {
+                    self.pending_new_window = Some((url.clone(), disposition.clone()));
+                    self.record_event(format!("new window requested: {url} ({disposition:?})"));
+                }
+                EngineEvent::DownloadRequested {
+                    url,
+                    suggested_path,
+                } => {
+                    let message = suggested_path
+                        .as_ref()
+                        .map(|path| format!("{url} -> {path}"))
+                        .unwrap_or_else(|| url.clone());
+                    self.last_download = Some(message.clone());
+                    self.record_event(format!("download requested: {message}"));
+                }
+                EngineEvent::SecurityWarning { kind, url } => {
+                    self.last_security_warning = Some((kind.clone(), url.clone()));
+                    self.record_event(format!("security warning: {kind:?} {url}"));
+                }
+                EngineEvent::Crashed { reason } => {
+                    self.last_crash = Some(reason.clone());
+                    self.record_event(format!("engine crashed: {reason}"));
                 }
                 other => {
                     self.record_event(format!("engine event: {other:?}"));
@@ -144,10 +189,30 @@ pub fn build_shell_state(
         history: Vec::new(),
         last_committed_url: None,
         was_minimized: false,
+        pending_popup: None,
+        pending_dialog: None,
+        pending_context_menu: None,
+        pending_new_window: None,
+        last_download: None,
+        last_security_warning: None,
+        last_crash: None,
+        last_crash_dump: None,
         event_log: vec![
             format!("loaded config for {}", config.app.name),
             format!("data dir: {}", paths.data_dir.display()),
             format!("logs dir: {}", paths.logs_dir.display()),
+            format!(
+                "engine policy: new-window={}, devtools={}, transport={}",
+                config.engine.new_window_policy,
+                config.engine.devtools_enabled,
+                config.engine.devtools_transport
+            ),
+            format!(
+                "engine limits: memory={}mb cpu={}ms max_tabs={}",
+                config.engine.resource_limits.memory_mb,
+                config.engine.resource_limits.cpu_ms,
+                config.engine.resource_limits.max_tabs
+            ),
         ],
         log_panel_open: config.window.show_log_panel_on_startup,
         permission_panel_open: config.window.show_permission_panel_on_startup,
@@ -163,14 +228,15 @@ pub struct BrazenApp {
     config: BrazenConfig,
     shell_state: ShellState,
     engine: Box<dyn BrowserEngine>,
+    engine_factory: crate::engine::ServoEngineFactory,
     surface_handle: RenderSurfaceHandle,
     last_surface: Option<RenderSurfaceMetadata>,
 }
 
 impl BrazenApp {
     pub fn new(config: BrazenConfig, shell_state: ShellState) -> Self {
-        let factory = crate::engine::ServoEngineFactory;
-        let engine = factory.create(&config, &shell_state.runtime_paths);
+        let engine_factory = crate::engine::ServoEngineFactory;
+        let engine = engine_factory.create(&config, &shell_state.runtime_paths);
         let surface_handle = RenderSurfaceHandle {
             id: 1,
             label: "primary-surface".to_string(),
@@ -180,6 +246,7 @@ impl BrazenApp {
             config,
             shell_state,
             engine,
+            engine_factory,
             surface_handle,
             last_surface: None,
         }
@@ -309,6 +376,57 @@ impl BrazenApp {
             }
         }
     }
+
+    fn apply_new_window_policy(&mut self) {
+        let Some((url, disposition)) = self.shell_state.pending_new_window.take() else {
+            return;
+        };
+        let policy = self.config.engine.new_window_policy.as_str();
+        let decision = match policy {
+            "new-tab" => WindowDisposition::BackgroundTab,
+            "same-tab" => WindowDisposition::ForegroundTab,
+            "block" => WindowDisposition::Blocked,
+            _ => disposition.clone(),
+        };
+
+        match decision {
+            WindowDisposition::ForegroundTab => {
+                self.engine.navigate(&url);
+                self.shell_state
+                    .record_event(format!("new window routed to current tab: {url}"));
+            }
+            WindowDisposition::BackgroundTab | WindowDisposition::NewWindow => {
+                self.shell_state
+                    .record_event(format!("new window deferred to future tab model: {url}"));
+            }
+            WindowDisposition::Blocked => {
+                self.shell_state
+                    .record_event(format!("new window blocked: {url}"));
+            }
+        }
+    }
+
+    fn write_crash_dump(&mut self, reason: &str) {
+        let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
+        let filename = format!("crash-{timestamp}.log");
+        let path = self
+            .shell_state
+            .runtime_paths
+            .crash_dumps_dir
+            .join(filename);
+        let _ = std::fs::create_dir_all(&self.shell_state.runtime_paths.crash_dumps_dir);
+        let _ = std::fs::write(&path, reason.as_bytes());
+        self.shell_state.last_crash_dump = Some(path.display().to_string());
+    }
+
+    fn restart_engine(&mut self) {
+        self.engine.shutdown();
+        self.engine = self
+            .engine_factory
+            .create(&self.config, &self.shell_state.runtime_paths);
+        self.last_surface = None;
+        self.shell_state.record_event("engine restarted");
+    }
 }
 
 impl eframe::App for BrazenApp {
@@ -316,6 +434,12 @@ impl eframe::App for BrazenApp {
         self.update_render_surface(ctx);
         self.forward_input_events(ctx);
         self.shell_state.sync_from_engine(self.engine.as_mut());
+        self.apply_new_window_policy();
+        if let Some(reason) = self.shell_state.last_crash.clone() {
+            if self.shell_state.last_crash_dump.is_none() {
+                self.write_crash_dump(&reason);
+            }
+        }
 
         eframe::egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -371,6 +495,9 @@ impl eframe::App for BrazenApp {
                         AppCommand::ReloadActiveTab,
                     );
                 }
+                if ui.button("Restart Engine").clicked() {
+                    self.restart_engine();
+                }
                 if ui.button("Logs").clicked() {
                     let _ = dispatch_command(
                         &mut self.shell_state,
@@ -405,6 +532,9 @@ impl eframe::App for BrazenApp {
                 if let Some(favicon) = &self.shell_state.favicon_url {
                     ui.label(format!("Favicon: {favicon}"));
                 }
+                if let Some(metadata) = &self.shell_state.metadata_summary {
+                    ui.label(format!("Metadata: {metadata}"));
+                }
                 ui.label(format!(
                     "Profiles: {}",
                     self.shell_state.runtime_paths.profiles_dir.display()
@@ -413,6 +543,67 @@ impl eframe::App for BrazenApp {
                     "Cache: {}",
                     self.shell_state.runtime_paths.cache_dir.display()
                 ));
+                ui.label(format!(
+                    "Crash dumps: {}",
+                    self.shell_state.runtime_paths.crash_dumps_dir.display()
+                ));
+                ui.label(format!(
+                    "Downloads: {}",
+                    self.shell_state.runtime_paths.downloads_dir.display()
+                ));
+                if let Some(last_download) = &self.shell_state.last_download {
+                    ui.label(format!("Last download: {last_download}"));
+                }
+                if let Some((kind, url)) = &self.shell_state.last_security_warning {
+                    ui.label(format!("Security: {kind:?} {url}"));
+                }
+                if let Some(reason) = &self.shell_state.last_crash {
+                    ui.label(format!("Crash: {reason}"));
+                }
+                if let Some(path) = &self.shell_state.last_crash_dump {
+                    ui.label(format!("Crash dump: {path}"));
+                }
+                ui.collapsing("Debug events", |ui| {
+                    if ui.button("Sim Popup").clicked() {
+                        self.engine.inject_event(EngineEvent::PopupRequested {
+                            url: "https://example.invalid/popup".to_string(),
+                            disposition: WindowDisposition::NewWindow,
+                        });
+                    }
+                    if ui.button("Sim Dialog").clicked() {
+                        self.engine.inject_event(EngineEvent::DialogRequested {
+                            kind: DialogKind::Alert,
+                            message: "Simulated alert".to_string(),
+                        });
+                    }
+                    if ui.button("Sim Context Menu").clicked() {
+                        self.engine
+                            .inject_event(EngineEvent::ContextMenuRequested { x: 120.0, y: 88.0 });
+                    }
+                    if ui.button("Sim New Window").clicked() {
+                        self.engine.inject_event(EngineEvent::NewWindowRequested {
+                            url: "https://example.invalid/new".to_string(),
+                            disposition: WindowDisposition::ForegroundTab,
+                        });
+                    }
+                    if ui.button("Sim Download").clicked() {
+                        self.engine.inject_event(EngineEvent::DownloadRequested {
+                            url: "https://example.invalid/file.zip".to_string(),
+                            suggested_path: Some("downloads/file.zip".to_string()),
+                        });
+                    }
+                    if ui.button("Sim TLS Warning").clicked() {
+                        self.engine.inject_event(EngineEvent::SecurityWarning {
+                            kind: SecurityWarningKind::TlsError,
+                            url: "https://badssl.example.invalid".to_string(),
+                        });
+                    }
+                    if ui.button("Sim Crash").clicked() {
+                        self.engine.inject_event(EngineEvent::Crashed {
+                            reason: "simulated crash".to_string(),
+                        });
+                    }
+                });
             });
 
         if self.shell_state.permission_panel_open {
@@ -438,6 +629,21 @@ impl eframe::App for BrazenApp {
             ui.group(|ui| {
                 ui.label("Current target");
                 ui.monospace(&self.shell_state.active_tab.current_url);
+            });
+            ui.add_space(12.0);
+            ui.group(|ui| {
+                ui.label("Pending dialogs");
+                if let Some((kind, message)) = &self.shell_state.pending_dialog {
+                    ui.label(format!("{kind:?}: {message}"));
+                } else {
+                    ui.label("none");
+                }
+                if let Some((url, disposition)) = &self.shell_state.pending_popup {
+                    ui.label(format!("popup: {url} ({disposition:?})"));
+                }
+                if let Some((x, y)) = &self.shell_state.pending_context_menu {
+                    ui.label(format!("context menu: {x:.0},{y:.0}"));
+                }
             });
             ui.add_space(12.0);
             ui.group(|ui| {
@@ -526,6 +732,10 @@ mod tests {
 
         fn shutdown(&mut self) {}
 
+        fn inject_event(&mut self, event: EngineEvent) {
+            self.events.push(event);
+        }
+
         fn take_events(&mut self) -> Vec<EngineEvent> {
             std::mem::take(&mut self.events)
         }
@@ -539,6 +749,8 @@ mod tests {
             logs_dir: "logs".into(),
             profiles_dir: "profiles".into(),
             cache_dir: "cache".into(),
+            downloads_dir: "downloads".into(),
+            crash_dumps_dir: "crash-dumps".into(),
         };
         let mut shell = ShellState {
             app_name: "Brazen".to_string(),
@@ -561,6 +773,14 @@ mod tests {
             history: Vec::new(),
             last_committed_url: None,
             was_minimized: false,
+            pending_popup: None,
+            pending_dialog: None,
+            pending_context_menu: None,
+            pending_new_window: None,
+            last_download: None,
+            last_security_warning: None,
+            last_crash: None,
+            last_crash_dump: None,
             event_log: Vec::new(),
             log_panel_open: true,
             permission_panel_open: false,
