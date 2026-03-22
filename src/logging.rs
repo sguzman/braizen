@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
+use chrono::Local;
 use thiserror::Error;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt;
@@ -75,7 +76,8 @@ pub fn init_tracing(config: &LoggingConfig, logs_dir: &Path) -> Result<(), Loggi
             source,
         })?;
 
-    let file_appender = tracing_appender::rolling::daily(logs_dir, &plan.file_name_prefix);
+    let file_name = build_log_file_name(&plan.file_name_prefix);
+    let file_appender = tracing_appender::rolling::never(logs_dir, file_name);
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
     let _ = TRACING_GUARD.set(guard);
 
@@ -98,4 +100,11 @@ pub fn init_tracing(config: &LoggingConfig, logs_dir: &Path) -> Result<(), Loggi
     let _ = TRACING_READY.set(());
     tracing::info!(target: "brazen::logging", path = %logs_dir.display(), "tracing initialized");
     Ok(())
+}
+
+fn build_log_file_name(prefix: &str) -> String {
+    let base = prefix.trim_end_matches(".log").trim();
+    let base = if base.is_empty() { "brazen" } else { base };
+    let timestamp = Local::now().format("%Y%m%d-%H%M%S");
+    format!("{base}-{timestamp}.log")
 }

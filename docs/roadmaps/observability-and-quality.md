@@ -15,6 +15,7 @@ Tracks tracing, diagnostics, testing, and verification quality across the platfo
 
 ## Observability
 
+- [x] Per-launch timestamped log files
 - [ ] Engine lifecycle spans around real Servo integration
 - [ ] Capability decision tracing
 - [ ] Connector activity tracing
