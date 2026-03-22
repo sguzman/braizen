@@ -75,6 +75,14 @@ impl BrazenConfig {
                 "profiles.active_profile must be non-empty".to_string(),
             ));
         }
+        match self.app.mode.as_str() {
+            "dev" | "prod" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "app.mode must be dev or prod".to_string(),
+                ));
+            }
+        }
         if self.engine.resource_limits.memory_mb == 0 {
             return Err(ConfigError::Validation(
                 "engine.resource_limits.memory_mb must be greater than zero".to_string(),
@@ -235,6 +243,7 @@ pub struct AppConfig {
     pub name: String,
     pub tagline: String,
     pub homepage: String,
+    pub mode: String,
 }
 
 impl Default for AppConfig {
@@ -243,6 +252,7 @@ impl Default for AppConfig {
             name: "Brazen".to_string(),
             tagline: "Capability Browser Platform".to_string(),
             homepage: "https://example.invalid/brazen".to_string(),
+            mode: "dev".to_string(),
         }
     }
 }

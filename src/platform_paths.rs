@@ -79,7 +79,12 @@ impl PlatformPaths {
         let dirs = &config.directories;
 
         let data_dir = self.resolve_dir(&base_dir, &self.data_root, &dirs.data_dir);
-        let logs_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.logs_dir);
+        let mut logs_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.logs_dir);
+        if config.app.mode == "dev" {
+            logs_dir = std::env::current_dir()
+                .unwrap_or_else(|_| base_dir.clone())
+                .join("logs");
+        }
         let profiles_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.profiles_dir);
         let cache_dir = self.resolve_dir(&base_dir, &self.cache_root, &dirs.cache_dir);
         let downloads_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.downloads_dir);

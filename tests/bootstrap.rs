@@ -75,7 +75,8 @@ fn runtime_paths_resolve_relative_to_config_directory() {
         "/tmp/brazen-data",
         "/tmp/brazen-cache",
     );
-    let config = BrazenConfig::default();
+    let mut config = BrazenConfig::default();
+    config.app.mode = "prod".to_string();
     let config_path = std::path::PathBuf::from("/workspace/settings/brazen.toml");
 
     let runtime = roots.resolve_runtime_paths(&config, &config_path).unwrap();

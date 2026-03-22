@@ -6,6 +6,7 @@
 name = "Brazen"
 tagline = "Capability Browser Platform"
 homepage = "https://example.invalid/brazen"
+mode = "dev"
 
 [window]
 initial_width = 1440.0
