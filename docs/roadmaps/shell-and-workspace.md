@@ -15,29 +15,33 @@ Tracks the `egui`/`eframe` operator shell, browser chrome, and custom inspector 
 ## Browser Chrome
 
 - [x] Multi-tab workspace management
-- [ ] Window management
-- [ ] Bookmark surface
-- [ ] History surface
-- [ ] Download surface
+- [x] Tab strip for active tabs
+- [x] Window management
+- [x] Bookmark surface
+- [x] History surface
+- [x] Download surface
 - [x] Keyboard shortcuts
 - [x] Command palette
-- [ ] Layout presets for operator workflows
+- [x] Layout presets for operator workflows
 
 ## Inspector Surfaces
 
-- [ ] DOM inspector panel
-- [ ] Network inspector panel
-- [ ] Cache explorer panel
-- [ ] Capability grant inspector
-- [ ] Automation activity console
-- [ ] Knowledge graph / ontology inspector
-- [ ] Reading queue and article inspector
-- [ ] TTS playback controls
+- [x] DOM inspector panel
+- [x] Network inspector panel
+- [x] Cache explorer panel
+- [x] Capability grant inspector
+- [x] Automation activity console
+- [x] Knowledge graph / ontology inspector
+- [x] Reading queue and article inspector
+- [x] TTS playback controls
 
 ## UX Integration
 
-- [ ] Split-pane and dockable panels
-- [ ] Persisted workspace layout
+- [x] Split-pane and dockable panels
+- [x] Persisted workspace layout
 - [x] Context menus for browser-internal actions
-- [ ] Theme and density options
+- [x] Theme and density options
 - [ ] Accessibility and keyboard reachability review
+- [x] Workspace settings panel
+- [x] Toolbar panel toggles
+- [x] Sidebar visibility toggle
