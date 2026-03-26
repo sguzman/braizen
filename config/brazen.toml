@@ -118,6 +118,11 @@ ai-tool-use = "ask"
 [automation]
 enabled = false
 bind = "ws://127.0.0.1:7942"
+require_auth = true
+auth_token = "replace-me"
+max_connections = 8
+max_messages_per_minute = 600
+max_subscriptions = 8
 expose_tab_api = true
 expose_cache_api = false
 

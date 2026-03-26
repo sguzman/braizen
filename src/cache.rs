@@ -74,7 +74,7 @@ pub struct AssetQuery {
     pub status_code: Option<u16>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheStats {
     pub entries: usize,
     pub total_bytes: u64,

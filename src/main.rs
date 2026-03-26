@@ -1,3 +1,4 @@
+use brazen::automation::start_automation_runtime;
 use brazen::cli_cache::run_cache_cli;
 use brazen::{BootstrapOptions, BrazenApp, ServoEngineFactory, bootstrap};
 use tracing::{error, info};
@@ -33,6 +34,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = bootstrap.config.clone();
     let shell_state = bootstrap.shell_state;
+    let automation = start_automation_runtime(&config, &bootstrap.paths);
     let app_name = config.app.name.clone();
 
     eframe::run_native(
@@ -42,6 +44,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(Box::new(BrazenApp::new(
                 config.clone(),
                 shell_state.clone(),
+                automation,
             )))
         }),
     )?;

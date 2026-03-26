@@ -231,9 +231,22 @@ impl BrazenConfig {
             let url = Url::parse(&self.automation.bind).map_err(|error| {
                 ConfigError::Validation(format!("automation.bind must be a valid URL: {error}"))
             })?;
-            if url.scheme() != "ws" && url.scheme() != "wss" {
+            if !matches!(url.scheme(), "ws" | "wss" | "ws+unix") {
                 return Err(ConfigError::Validation(
-                    "automation.bind must use ws or wss".to_string(),
+                    "automation.bind must use ws, wss, or ws+unix".to_string(),
+                ));
+            }
+            if self.automation.require_auth && self.automation.auth_token.is_none() {
+                return Err(ConfigError::Validation(
+                    "automation.auth_token must be set when require_auth is true".to_string(),
+                ));
+            }
+            if self.automation.max_connections == 0
+                || self.automation.max_messages_per_minute == 0
+                || self.automation.max_subscriptions == 0
+            {
+                return Err(ConfigError::Validation(
+                    "automation limits must be greater than zero".to_string(),
                 ));
             }
         }
@@ -644,6 +657,11 @@ pub struct HostCapturePolicy {
 pub struct AutomationConfig {
     pub enabled: bool,
     pub bind: String,
+    pub require_auth: bool,
+    pub auth_token: Option<String>,
+    pub max_connections: u32,
+    pub max_messages_per_minute: u32,
+    pub max_subscriptions: u32,
     pub expose_tab_api: bool,
     pub expose_cache_api: bool,
 }
@@ -653,6 +671,11 @@ impl Default for AutomationConfig {
         Self {
             enabled: false,
             bind: "ws://127.0.0.1:7942".to_string(),
+            require_auth: true,
+            auth_token: None,
+            max_connections: 8,
+            max_messages_per_minute: 600,
+            max_subscriptions: 8,
             expose_tab_api: true,
             expose_cache_api: false,
         }

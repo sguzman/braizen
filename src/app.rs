@@ -2,6 +2,10 @@ use chrono::Utc;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use crate::automation::{
+    AutomationCapabilityEvent, AutomationCommand, AutomationHandle, AutomationNavigationEvent,
+    drain_automation_commands,
+};
 use crate::cache::{AssetQuery, AssetStore};
 use crate::commands::{AppCommand, dispatch_command};
 use crate::config::BrazenConfig;
@@ -365,10 +369,18 @@ pub struct BrazenApp {
     cache_import_path: String,
     cache_manifest_path: String,
     pending_startup_url: Option<String>,
+    automation_handle: Option<AutomationHandle>,
+    automation_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AutomationCommand>>,
+    last_nav_event: Option<(String, Option<EngineLoadStatus>, f32)>,
+    last_event_log_len: usize,
 }
 
 impl BrazenApp {
-    pub fn new(config: BrazenConfig, shell_state: ShellState) -> Self {
+    pub fn new(
+        config: BrazenConfig,
+        shell_state: ShellState,
+        automation: Option<crate::automation::AutomationRuntime>,
+    ) -> Self {
         let engine_factory = crate::engine::ServoEngineFactory;
         let mut engine = engine_factory.create(&config, &shell_state.runtime_paths);
         engine.set_verbose_logging(config.engine.verbose_logging);
@@ -389,6 +401,10 @@ impl BrazenApp {
         let pending_startup_url = resolve_startup_url(&config.engine.startup_url)
             .ok()
             .flatten();
+
+        let (automation_handle, automation_rx) = automation
+            .map(|runtime| (Some(runtime.handle), Some(runtime.command_rx)))
+            .unwrap_or((None, None));
 
         Self {
             config,
@@ -438,6 +454,10 @@ impl BrazenApp {
             cache_import_path: "cache-import.json".to_string(),
             cache_manifest_path: "cache-manifest.json".to_string(),
             pending_startup_url,
+            automation_handle,
+            automation_rx,
+            last_nav_event: None,
+            last_event_log_len: 0,
         }
     }
 
@@ -475,6 +495,47 @@ impl BrazenApp {
                 self.load_status_started_at = None;
                 self.load_status_warned = false;
                 self.shell_state.render_warning = None;
+            }
+        }
+    }
+
+    fn update_automation(&mut self) {
+        if let Some(receiver) = &mut self.automation_rx {
+            drain_automation_commands(receiver, &mut self.shell_state, self.engine.as_mut());
+        }
+        if let Some(handle) = &self.automation_handle {
+            handle.update_snapshot(&self.shell_state, &self.cache_store);
+            let nav_key = (
+                self.shell_state.active_tab.current_url.clone(),
+                self.shell_state.load_status,
+                (self.shell_state.load_progress * 100.0).round() / 100.0,
+            );
+            if self.last_nav_event.as_ref() != Some(&nav_key) {
+                let event = AutomationNavigationEvent {
+                    url: self.shell_state.active_tab.current_url.clone(),
+                    title: self.shell_state.page_title.clone(),
+                    load_status: self
+                        .shell_state
+                        .load_status
+                        .map(|status| status.as_str().to_string()),
+                    load_progress: self.shell_state.load_progress,
+                };
+                handle.publish_navigation(event);
+                self.last_nav_event = Some(nav_key);
+            }
+            if self.shell_state.event_log.len() > self.last_event_log_len {
+                for line in self.shell_state.event_log[self.last_event_log_len..].iter() {
+                    let lower = line.to_lowercase();
+                    if lower.contains("permission")
+                        || lower.contains("capability")
+                        || lower.contains("security warning")
+                    {
+                        handle.publish_capability(AutomationCapabilityEvent {
+                            message: line.clone(),
+                        });
+                    }
+                }
+                self.last_event_log_len = self.shell_state.event_log.len();
             }
         }
     }
@@ -1683,6 +1744,7 @@ impl eframe::App for BrazenApp {
         self.forward_input_events(ctx);
         self.update_render_frame(ctx);
         self.shell_state.sync_from_engine(self.engine.as_mut());
+        self.update_automation();
         self.update_render_health();
         self.apply_cursor_icon(ctx);
         self.apply_new_window_policy();
@@ -2220,7 +2282,7 @@ mod tests {
         let paths = test_paths();
         let engine_factory = crate::engine::ServoEngineFactory;
         let shell_state = build_shell_state(&config, &paths, &engine_factory);
-        BrazenApp::new(config, shell_state)
+        BrazenApp::new(config, shell_state, None)
     }
 
     struct MockEngine {

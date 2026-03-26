@@ -1,4 +1,5 @@
 pub mod app;
+pub mod automation;
 pub mod cache;
 pub mod cli_cache;
 pub mod commands;

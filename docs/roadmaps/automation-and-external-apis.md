@@ -6,29 +6,29 @@ Tracks local sockets, WebSocket APIs, subscriptions, and browser-state access fo
 
 - [x] Automation endpoint config exists
 - [x] Tab and cache exposure flags exist in config
-- [ ] No live automation server exists yet
+- [x] Live automation server exists
 
 ## API Surface
 
-- [ ] Tab enumeration API
-- [ ] Tab manipulation API
+- [x] Tab enumeration API
+- [x] Tab manipulation API
 - [ ] DOM query API
 - [ ] Rendered-text / article-text API
-- [ ] Cache metadata query API
-- [ ] Cached asset body retrieval API
-- [ ] Event subscription API for navigation and capability activity
+- [x] Cache metadata query API
+- [x] Cached asset body retrieval API
+- [x] Event subscription API for navigation and capability activity
 - [ ] TTS and reading-queue control API
 
 ## Transport And Trust
 
-- [ ] Localhost WebSocket server
-- [ ] Unix-domain / named-pipe option
-- [ ] Client authentication model
-- [ ] Capability checks for API callers
-- [ ] Rate limiting and subscription backpressure
+- [x] Localhost WebSocket server
+- [x] Unix-domain / named-pipe option
+- [x] Client authentication model
+- [x] Capability checks for API callers
+- [x] Rate limiting and subscription backpressure
 
 ## Developer Experience
 
-- [ ] Stable schema for request/response payloads
-- [ ] Example CLI and scripting workflows
-- [ ] API docs and local-debug tooling
+- [x] Stable schema for request/response payloads
+- [x] Example CLI and scripting workflows
+- [x] API docs and local-debug tooling
