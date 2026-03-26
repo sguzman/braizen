@@ -15,16 +15,22 @@ pub enum FocusState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputEvent {
+    PointerEnter {
+        x: f32,
+        y: f32,
+    },
     PointerMove {
         x: f32,
         y: f32,
     },
     PointerDown {
         button: u8,
+        click_count: u8,
     },
     PointerUp {
         button: u8,
     },
+    PointerLeave,
     Scroll {
         delta_x: f32,
         delta_y: f32,
@@ -35,6 +41,7 @@ pub enum InputEvent {
     KeyDown {
         key: String,
         modifiers: KeyModifiers,
+        repeat: bool,
     },
     KeyUp {
         key: String,
@@ -240,6 +247,9 @@ pub enum EngineEvent {
     NavigationRequested(String),
     NavigationStateUpdated(NavigationState),
     RenderHealthUpdated(RenderHealth),
+    CursorChanged {
+        cursor: String,
+    },
     DevtoolsReady {
         endpoint: String,
     },
@@ -578,6 +588,8 @@ pub struct ServoEngine {
     upstream_error_reported: bool,
     #[cfg(feature = "servo-upstream")]
     last_render_health: Option<RenderHealth>,
+    #[cfg(feature = "servo-upstream")]
+    last_cursor: Option<libservo::Cursor>,
 }
 
 #[cfg(feature = "servo")]
@@ -634,6 +646,8 @@ impl ServoEngine {
             upstream_error_reported: false,
             #[cfg(feature = "servo-upstream")]
             last_render_health: None,
+            #[cfg(feature = "servo-upstream")]
+            last_cursor: None,
         }
     }
 }
@@ -834,6 +848,13 @@ impl BrowserEngine for ServoEngine {
                     };
                     self.navigation_state.document_ready =
                         matches!(snapshot.load_status, libservo::LoadStatus::Complete);
+                    let cursor = snapshot.cursor.unwrap_or(libservo::Cursor::Default);
+                    if self.last_cursor != Some(cursor) {
+                        self.events.push(EngineEvent::CursorChanged {
+                            cursor: format!("{cursor:?}"),
+                        });
+                        self.last_cursor = Some(cursor);
+                    }
                     self.events.push(EngineEvent::NavigationStateUpdated(
                         self.navigation_state.clone(),
                     ));

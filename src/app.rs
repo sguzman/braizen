@@ -37,6 +37,7 @@ pub struct ShellState {
     pub history: Vec<String>,
     pub last_committed_url: Option<String>,
     pub active_tab_zoom: f32,
+    pub cursor_icon: Option<String>,
     pub was_minimized: bool,
     pub pending_popup: Option<(String, WindowDisposition)>,
     pub pending_dialog: Option<(DialogKind, String)>,
@@ -57,6 +58,8 @@ pub struct ShellState {
     pub event_log: Vec<String>,
     pub log_panel_open: bool,
     pub permission_panel_open: bool,
+    pub find_panel_open: bool,
+    pub find_query: String,
     pub capabilities_snapshot: Vec<(String, String)>,
     pub runtime_paths: RuntimePaths,
 }
@@ -119,6 +122,9 @@ impl ShellState {
                     self.resource_reader_path = health.resource_reader_path;
                     self.upstream_active = health.upstream_active;
                     self.upstream_last_error = health.last_error;
+                }
+                EngineEvent::CursorChanged { cursor } => {
+                    self.cursor_icon = Some(cursor.clone());
                 }
                 EngineEvent::DevtoolsReady { endpoint } => {
                     self.devtools_endpoint = Some(endpoint.clone());
@@ -255,6 +261,7 @@ pub fn build_shell_state(
             .active_tab()
             .map(|tab| tab.zoom_level)
             .unwrap_or(config.engine.zoom_default),
+        cursor_icon: None,
         was_minimized: false,
         pending_popup: None,
         pending_dialog: None,
@@ -296,6 +303,8 @@ pub fn build_shell_state(
         ],
         log_panel_open: config.window.show_log_panel_on_startup,
         permission_panel_open: config.window.show_permission_panel_on_startup,
+        find_panel_open: false,
+        find_query: String::new(),
         capabilities_snapshot,
         runtime_paths: paths.clone(),
     };
@@ -319,6 +328,7 @@ pub struct BrazenApp {
         AlphaMode,
         crate::engine::ColorSpace,
     )>,
+    last_frame_pixels: Option<Vec<u8>>,
     render_viewport_rect: Option<eframe::egui::Rect>,
     frame_probe: Option<crate::rendering::FrameProbeStats>,
     blank_frame_streak: u32,
@@ -335,6 +345,11 @@ pub struct BrazenApp {
     last_pointer_pos: Option<eframe::egui::Pos2>,
     last_pointer_local: Option<eframe::egui::Pos2>,
     pointer_captured: bool,
+    pointer_inside: bool,
+    last_click_at: Option<Instant>,
+    last_click_pos: Option<eframe::egui::Pos2>,
+    last_click_button: Option<eframe::egui::PointerButton>,
+    click_count: u8,
     capture_next_frame: bool,
     pending_restart_at: Option<chrono::DateTime<Utc>>,
     crash_count: u32,
@@ -386,6 +401,7 @@ impl BrazenApp {
             render_frame_number: None,
             render_frame_size: None,
             render_frame_format: None,
+            last_frame_pixels: None,
             render_viewport_rect: None,
             frame_probe: None,
             blank_frame_streak: 0,
@@ -402,6 +418,11 @@ impl BrazenApp {
             last_pointer_pos: None,
             last_pointer_local: None,
             pointer_captured: false,
+            pointer_inside: false,
+            last_click_at: None,
+            last_click_pos: None,
+            last_click_button: None,
+            click_count: 0,
             capture_next_frame,
             pending_restart_at: None,
             crash_count: 0,
@@ -456,6 +477,39 @@ impl BrazenApp {
                 self.shell_state.render_warning = None;
             }
         }
+    }
+
+    fn apply_cursor_icon(&self, ctx: &eframe::egui::Context) {
+        let Some(cursor) = self.shell_state.cursor_icon.as_deref() else {
+            return;
+        };
+        let inside = self
+            .last_pointer_pos
+            .and_then(|pos| self.render_viewport_rect.map(|rect| rect.contains(pos)))
+            .unwrap_or(false);
+        if !inside {
+            return;
+        }
+        let icon = match cursor {
+            "Pointer" => eframe::egui::CursorIcon::PointingHand,
+            "Text" | "VerticalText" => eframe::egui::CursorIcon::Text,
+            "Crosshair" => eframe::egui::CursorIcon::Crosshair,
+            "Move" | "AllScroll" => eframe::egui::CursorIcon::Move,
+            "Grab" => eframe::egui::CursorIcon::Grab,
+            "Grabbing" => eframe::egui::CursorIcon::Grabbing,
+            "NotAllowed" | "NoDrop" => eframe::egui::CursorIcon::NotAllowed,
+            "EResize" | "EwResize" => eframe::egui::CursorIcon::ResizeHorizontal,
+            "NResize" | "SResize" | "NsResize" => eframe::egui::CursorIcon::ResizeVertical,
+            "NeResize" | "SwResize" | "NeswResize" => eframe::egui::CursorIcon::ResizeNeSw,
+            "NwResize" | "SeResize" | "NwseResize" => eframe::egui::CursorIcon::ResizeNwSe,
+            "RowResize" => eframe::egui::CursorIcon::ResizeRow,
+            "ColResize" => eframe::egui::CursorIcon::ResizeColumn,
+            "ZoomIn" => eframe::egui::CursorIcon::ZoomIn,
+            "ZoomOut" => eframe::egui::CursorIcon::ZoomOut,
+            "Wait" | "Progress" => eframe::egui::CursorIcon::Wait,
+            _ => eframe::egui::CursorIcon::Default,
+        };
+        ctx.output_mut(|output| output.cursor_icon = icon);
     }
 
     pub fn shell_state(&self) -> &ShellState {
@@ -535,6 +589,10 @@ impl BrazenApp {
                         );
                         close_menu = true;
                     }
+                    if ui.button("Save Snapshot").clicked() {
+                        self.save_snapshot_to_disk();
+                        close_menu = true;
+                    }
                     ui.separator();
                     if ui.button("Zoom In").clicked() {
                         self.apply_zoom_steps(1, "context menu");
@@ -611,6 +669,31 @@ impl BrazenApp {
         self.set_active_tab_zoom(current * factor, reason);
     }
 
+    fn update_click_count(
+        &mut self,
+        button: eframe::egui::PointerButton,
+        pos: eframe::egui::Pos2,
+    ) -> u8 {
+        let now = Instant::now();
+        let within_time = self
+            .last_click_at
+            .map(|at| now.duration_since(at) <= Duration::from_millis(500))
+            .unwrap_or(false);
+        let within_distance = self
+            .last_click_pos
+            .map(|last| last.distance(pos) <= 4.0)
+            .unwrap_or(false);
+        if within_time && within_distance && self.last_click_button == Some(button) {
+            self.click_count = (self.click_count + 1).min(3);
+        } else {
+            self.click_count = 1;
+        }
+        self.last_click_at = Some(now);
+        self.last_click_pos = Some(pos);
+        self.last_click_button = Some(button);
+        self.click_count
+    }
+
     fn update_render_surface(&mut self, ctx: &eframe::egui::Context) {
         let screen_rect = ctx.content_rect();
         let pixels_per_point = ctx.pixels_per_point();
@@ -666,6 +749,7 @@ impl BrazenApp {
         if pixels.is_empty() {
             return;
         }
+        self.last_frame_pixels = Some(pixels.clone());
         if self.frame_probe_enabled() {
             self.frame_probe = probe_frame_stats(&pixels, frame.width, frame.height, 256);
             if let Some(stats) = self.frame_probe {
@@ -834,6 +918,52 @@ impl BrazenApp {
         }
     }
 
+    fn save_snapshot_to_disk(&mut self) {
+        let Some(pixels) = self.last_frame_pixels.as_ref() else {
+            self.shell_state
+                .record_event("snapshot save skipped: no frame");
+            return;
+        };
+        let Some((width, height)) = self.render_frame_size else {
+            self.shell_state
+                .record_event("snapshot save skipped: no frame size");
+            return;
+        };
+        let dir = &self.shell_state.runtime_paths.downloads_dir;
+        if let Err(error) = std::fs::create_dir_all(dir) {
+            tracing::warn!(
+                target: "brazen::render",
+                path = %dir.display(),
+                %error,
+                "failed to create downloads directory"
+            );
+            return;
+        }
+        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+        let filename = format!("brazen-snapshot-{timestamp}.ppm");
+        let path = dir.join(filename);
+        let mut buffer = Vec::with_capacity(pixels.len() + 64);
+        buffer.extend_from_slice(format!("P6\n{} {}\n255\n", width, height).as_bytes());
+        for chunk in pixels.chunks_exact(4) {
+            buffer.push(chunk[0]);
+            buffer.push(chunk[1]);
+            buffer.push(chunk[2]);
+        }
+        if let Err(error) = std::fs::write(&path, buffer) {
+            tracing::warn!(
+                target: "brazen::render",
+                path = %path.display(),
+                %error,
+                "failed to write snapshot"
+            );
+            self.shell_state
+                .record_event(format!("snapshot save failed: {}", path.display()));
+        } else {
+            self.shell_state
+                .record_event(format!("snapshot saved: {}", path.display()));
+        }
+    }
+
     fn resolve_capture_dir(&self) -> std::path::PathBuf {
         let choice = self.config.engine.debug_capture_dir.trim();
         match choice {
@@ -895,6 +1025,13 @@ impl BrazenApp {
                         self.map_pointer_to_viewport(ctx, pos, self.pointer_captured)
                     {
                         self.last_pointer_local = Some(local);
+                        if !self.pointer_inside {
+                            self.pointer_inside = true;
+                            self.engine.handle_input(InputEvent::PointerEnter {
+                                x: local.x,
+                                y: local.y,
+                            });
+                        }
                         if input_logging {
                             tracing::trace!(
                                 target: "brazen::input",
@@ -909,6 +1046,10 @@ impl BrazenApp {
                         });
                     } else {
                         self.last_pointer_local = None;
+                        if self.pointer_inside && !self.pointer_captured {
+                            self.pointer_inside = false;
+                            self.engine.handle_input(InputEvent::PointerLeave);
+                        }
                     }
                 }
                 eframe::egui::Event::PointerButton {
@@ -928,6 +1069,13 @@ impl BrazenApp {
                     let allow_outside = self.pointer_captured || pressed;
                     if let Some(local) = self.map_pointer_to_viewport(ctx, pos, allow_outside) {
                         self.last_pointer_local = Some(local);
+                        if !self.pointer_inside {
+                            self.pointer_inside = true;
+                            self.engine.handle_input(InputEvent::PointerEnter {
+                                x: local.x,
+                                y: local.y,
+                            });
+                        }
                         if input_logging {
                             tracing::trace!(
                                 target: "brazen::input",
@@ -939,6 +1087,7 @@ impl BrazenApp {
                             );
                         }
                         if pressed {
+                            let click_count = self.update_click_count(button, pos);
                             if button == eframe::egui::PointerButton::Secondary {
                                 self.shell_state.pending_context_menu = Some((pos.x, pos.y));
                                 self.shell_state.record_event(format!(
@@ -953,8 +1102,10 @@ impl BrazenApp {
                                 eframe::egui::PointerButton::Primary
                                     | eframe::egui::PointerButton::Middle
                             );
-                            self.engine
-                                .handle_input(InputEvent::PointerDown { button: button_id });
+                            self.engine.handle_input(InputEvent::PointerDown {
+                                button: button_id,
+                                click_count,
+                            });
                         } else {
                             self.pointer_captured = false;
                             self.engine
@@ -962,6 +1113,10 @@ impl BrazenApp {
                         }
                     } else if !pressed {
                         self.pointer_captured = false;
+                        if self.pointer_inside {
+                            self.pointer_inside = false;
+                            self.engine.handle_input(InputEvent::PointerLeave);
+                        }
                     }
                 }
                 eframe::egui::Event::MouseWheel { delta, unit, .. } => {
@@ -1046,10 +1201,30 @@ impl BrazenApp {
                     key,
                     pressed,
                     modifiers,
+                    repeat,
                     ..
                 } => {
+                    let is_command = modifiers.ctrl || modifiers.command;
+                    if pressed && is_command {
+                        match key {
+                            eframe::egui::Key::C | eframe::egui::Key::X => {
+                                self.engine
+                                    .handle_clipboard(crate::engine::ClipboardRequest::Read);
+                                self.shell_state
+                                    .record_event(format!("shortcut {:?} => copy", key));
+                            }
+                            eframe::egui::Key::A => {
+                                self.shell_state.record_event("shortcut: select all");
+                            }
+                            eframe::egui::Key::F => {
+                                self.shell_state.find_panel_open = true;
+                                self.shell_state.record_event("shortcut: find");
+                            }
+                            _ => {}
+                        }
+                    }
                     let zoom_shortcut = pressed
-                        && (modifiers.ctrl || modifiers.command)
+                        && is_command
                         && matches!(
                             key,
                             eframe::egui::Key::Plus
@@ -1090,6 +1265,7 @@ impl BrazenApp {
                         self.engine.handle_input(InputEvent::KeyDown {
                             key: key_name,
                             modifiers,
+                            repeat,
                         });
                     } else {
                         self.engine.handle_input(InputEvent::KeyUp {
@@ -1157,6 +1333,32 @@ impl BrazenApp {
                         .handle_clipboard(crate::engine::ClipboardRequest::Write(text));
                 }
                 _ => {}
+            }
+        }
+
+        if !input.raw.dropped_files.is_empty() {
+            for file in input.raw.dropped_files {
+                let mut target = None;
+                if let Some(path) = file.path {
+                    if let Ok(url) = url::Url::from_file_path(&path) {
+                        target = Some(url.to_string());
+                    } else {
+                        target = Some(path.to_string_lossy().to_string());
+                    }
+                } else if file.name.starts_with("http://") || file.name.starts_with("https://") {
+                    target = Some(file.name.clone());
+                }
+                if let Some(target) = target {
+                    self.shell_state.address_bar_input = target.clone();
+                    let _ = dispatch_command(
+                        &mut self.shell_state,
+                        self.engine.as_mut(),
+                        AppCommand::NavigateTo(target.clone()),
+                    );
+                    self.shell_state
+                        .record_event(format!("dropped file/url: {target}"));
+                    break;
+                }
             }
         }
     }
@@ -1482,6 +1684,7 @@ impl eframe::App for BrazenApp {
         self.update_render_frame(ctx);
         self.shell_state.sync_from_engine(self.engine.as_mut());
         self.update_render_health();
+        self.apply_cursor_icon(ctx);
         self.apply_new_window_policy();
         if let Some(reason) = self.shell_state.last_crash.clone() {
             if self.shell_state.last_crash_dump.is_none() {
@@ -1944,6 +2147,37 @@ impl eframe::App for BrazenApp {
                 });
         }
 
+        if self.shell_state.find_panel_open {
+            eframe::egui::TopBottomPanel::bottom("find_panel")
+                .resizable(false)
+                .default_height(64.0)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Find");
+                        let response = ui.text_edit_singleline(&mut self.shell_state.find_query);
+                        let enter_pressed =
+                            ui.input(|input| input.key_pressed(eframe::egui::Key::Enter));
+                        if response.changed() && !self.shell_state.find_query.is_empty() {
+                            self.shell_state.record_event(format!(
+                                "find query: {}",
+                                self.shell_state.find_query
+                            ));
+                        }
+                        if (response.lost_focus() && enter_pressed)
+                            || ui.button("Find Next").clicked()
+                        {
+                            self.shell_state.record_event(format!(
+                                "find next: {}",
+                                self.shell_state.find_query
+                            ));
+                        }
+                        if ui.button("Close").clicked() {
+                            self.shell_state.find_panel_open = false;
+                        }
+                    });
+                });
+        }
+
         self.render_context_menu(ctx);
     }
 }
@@ -2095,6 +2329,7 @@ mod tests {
             history: Vec::new(),
             last_committed_url: None,
             active_tab_zoom: 1.0,
+            cursor_icon: None,
             was_minimized: false,
             pending_popup: None,
             pending_dialog: None,
@@ -2115,6 +2350,8 @@ mod tests {
             event_log: Vec::new(),
             log_panel_open: true,
             permission_panel_open: false,
+            find_panel_open: false,
+            find_query: String::new(),
             capabilities_snapshot: Vec::new(),
             runtime_paths: paths,
         };
@@ -2184,6 +2421,7 @@ mod tests {
             history: Vec::new(),
             last_committed_url: None,
             active_tab_zoom: 1.0,
+            cursor_icon: None,
             was_minimized: false,
             pending_popup: None,
             pending_dialog: None,
@@ -2204,6 +2442,8 @@ mod tests {
             event_log: Vec::new(),
             log_panel_open: true,
             permission_panel_open: false,
+            find_panel_open: false,
+            find_query: String::new(),
             capabilities_snapshot: Vec::new(),
             runtime_paths: paths,
         };

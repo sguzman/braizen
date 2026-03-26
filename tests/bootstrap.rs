@@ -216,6 +216,7 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         history: Vec::new(),
         last_committed_url: None,
         active_tab_zoom: 1.0,
+        cursor_icon: None,
         was_minimized: false,
         pending_popup: None,
         pending_dialog: None,
@@ -236,6 +237,8 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         event_log: Vec::new(),
         log_panel_open: true,
         permission_panel_open: false,
+        find_panel_open: false,
+        find_query: String::new(),
         capabilities_snapshot: Vec::new(),
         runtime_paths,
     };
@@ -301,6 +304,7 @@ fn command_dispatch_rejects_invalid_urls() {
         history: Vec::new(),
         last_committed_url: None,
         active_tab_zoom: 1.0,
+        cursor_icon: None,
         was_minimized: false,
         pending_popup: None,
         pending_dialog: None,
@@ -321,6 +325,8 @@ fn command_dispatch_rejects_invalid_urls() {
         event_log: Vec::new(),
         log_panel_open: true,
         permission_panel_open: false,
+        find_panel_open: false,
+        find_query: String::new(),
         capabilities_snapshot: Vec::new(),
         runtime_paths,
     };

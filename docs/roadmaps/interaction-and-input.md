@@ -5,11 +5,11 @@ Focuses on making the browser feel usable: accurate pointer/keyboard input, righ
 ## Pointer + Click
 
 - [x] Normalize pointer coordinates across scale factors and viewports.
-- [ ] Track hover/enter/leave events reliably for Servo.
+- [x] Track hover/enter/leave events reliably for Servo.
 - [x] Support left/right/middle click with correct button mapping.
-- [ ] Support double-click and click count.
+- [x] Support double-click and click count.
 - [x] Add pointer capture for drag operations.
-- [ ] Fix cursor updates (text, pointer, resize, grab, etc).
+- [x] Fix cursor updates (text, pointer, resize, grab, etc).
 
 ## Scroll + Zoom
 
@@ -23,8 +23,8 @@ Focuses on making the browser feel usable: accurate pointer/keyboard input, righ
 ## Keyboard + IME
 
 - [x] Fix key mapping for common navigation keys (Backspace, Enter, Tab, Esc).
-- [ ] Support Ctrl/Cmd shortcuts (Copy/Paste/Select All/Find).
-- [ ] Ensure key repeat and modifiers are delivered correctly.
+- [x] Support Ctrl/Cmd shortcuts (Copy/Paste/Select All/Find).
+- [x] Ensure key repeat and modifiers are delivered correctly.
 - [x] Integrate IME composition start/update/end with Servo.
 
 ## Context Menus + Right Click
@@ -37,8 +37,8 @@ Focuses on making the browser feel usable: accurate pointer/keyboard input, righ
 ## Clipboard + Drag/Drop
 
 - [x] Bridge clipboard read/write requests (text).
-- [ ] Add drag-and-drop for URLs into the address bar.
-- [ ] Support image drag‑out to file (future).
+- [x] Add drag-and-drop for URLs into the address bar.
+- [x] Support image drag‑out to file (future).
 
 ## Diagnostics + Testing
 

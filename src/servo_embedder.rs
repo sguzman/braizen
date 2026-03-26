@@ -437,7 +437,7 @@ impl ServoEmbedder {
             tracing::trace!(target: "brazen::servo", ?event, "input forwarded");
         }
         match event {
-            InputEvent::PointerMove { x, y } => {
+            InputEvent::PointerEnter { x, y } | InputEvent::PointerMove { x, y } => {
                 let scaled = (*x * self.input_scale, *y * self.input_scale);
                 self.last_pointer = scaled;
                 #[cfg(feature = "servo-upstream")]
@@ -447,7 +447,10 @@ impl ServoEmbedder {
                 #[cfg(not(feature = "servo-upstream"))]
                 let _ = (x, y);
             }
-            InputEvent::PointerDown { button } => {
+            InputEvent::PointerDown {
+                button,
+                click_count,
+            } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
                     upstream.handle_mouse_button(
@@ -456,9 +459,17 @@ impl ServoEmbedder {
                         self.last_pointer.0,
                         self.last_pointer.1,
                     );
+                    if *click_count >= 2 {
+                        tracing::trace!(
+                            target: "brazen::servo",
+                            button = *button,
+                            click_count = *click_count,
+                            "double click detected"
+                        );
+                    }
                 }
                 #[cfg(not(feature = "servo-upstream"))]
-                let _ = button;
+                let _ = (button, click_count);
             }
             InputEvent::PointerUp { button } => {
                 #[cfg(feature = "servo-upstream")]
@@ -472,6 +483,13 @@ impl ServoEmbedder {
                 }
                 #[cfg(not(feature = "servo-upstream"))]
                 let _ = button;
+            }
+            InputEvent::PointerLeave =>
+            {
+                #[cfg(feature = "servo-upstream")]
+                if let Some(upstream) = &self.upstream {
+                    upstream.handle_mouse_leave();
+                }
             }
             InputEvent::Scroll { delta_x, delta_y } => {
                 #[cfg(feature = "servo-upstream")]
@@ -503,18 +521,22 @@ impl ServoEmbedder {
                 #[cfg(not(feature = "servo-upstream"))]
                 let _ = delta;
             }
-            InputEvent::KeyDown { key, modifiers } => {
+            InputEvent::KeyDown {
+                key,
+                modifiers,
+                repeat,
+            } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
-                    upstream.handle_keyboard(key, true, *modifiers);
+                    upstream.handle_keyboard(key, true, *modifiers, *repeat);
                 }
                 #[cfg(not(feature = "servo-upstream"))]
-                let _ = (key, modifiers);
+                let _ = (key, modifiers, repeat);
             }
             InputEvent::KeyUp { key, modifiers } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
-                    upstream.handle_keyboard(key, false, *modifiers);
+                    upstream.handle_keyboard(key, false, *modifiers, false);
                 }
                 #[cfg(not(feature = "servo-upstream"))]
                 let _ = (key, modifiers);

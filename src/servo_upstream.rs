@@ -15,9 +15,10 @@ use dpi::PhysicalSize;
 use libservo::{
     Code, CompositionEvent, CompositionState, DeviceIntPoint, DeviceIntRect, DeviceIntSize,
     DevicePoint, EventLoopWaker, ImeEvent, InputEvent, Key, KeyState, KeyboardEvent, LoadStatus,
-    Location, Modifiers, MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent,
-    NamedKey, Opts, RenderingContext, Servo, ServoBuilder, ServoDelegate, SoftwareRenderingContext,
-    WebView, WebViewBuilder, WebViewDelegate, WebViewPoint, WheelDelta, WheelEvent, WheelMode,
+    Location, Modifiers, MouseButton, MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent,
+    MouseMoveEvent, NamedKey, Opts, RenderingContext, Servo, ServoBuilder, ServoDelegate,
+    SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate, WebViewPoint, WheelDelta,
+    WheelEvent, WheelMode,
 };
 use tracing_log::LogTracer;
 use url::Url;
@@ -27,6 +28,7 @@ pub struct UpstreamSnapshot {
     pub url: String,
     pub title: Option<String>,
     pub favicon_url: Option<String>,
+    pub cursor: Option<libservo::Cursor>,
     pub load_status: LoadStatus,
     pub history: Vec<String>,
     pub history_index: usize,
@@ -68,6 +70,7 @@ impl Default for UpstreamSnapshot {
             url: "about:blank".to_string(),
             title: None,
             favicon_url: None,
+            cursor: None,
             load_status: LoadStatus::Started,
             history: vec!["about:blank".to_string()],
             history_index: 0,
@@ -121,6 +124,10 @@ impl WebViewDelegate for BrazenWebViewDelegate {
             status = ?status,
             "load status updated"
         );
+    }
+
+    fn notify_cursor_changed(&self, _webview: WebView, cursor: libservo::Cursor) {
+        self.snapshot.borrow_mut().cursor = Some(cursor);
     }
 
     fn notify_history_changed(&self, _webview: WebView, entries: Vec<Url>, current: usize) {
@@ -480,6 +487,12 @@ impl ServoUpstreamRuntime {
         )));
     }
 
+    pub fn handle_mouse_leave(&self) {
+        self.handle_input(InputEvent::MouseLeftViewport(MouseLeftViewportEvent {
+            focus_moving_to_another_iframe: false,
+        }));
+    }
+
     pub fn handle_wheel(&self, delta_x: f32, delta_y: f32, x: f32, y: f32) {
         let delta = WheelDelta {
             x: delta_x as f64,
@@ -506,7 +519,7 @@ impl ServoUpstreamRuntime {
         self.webview.page_zoom()
     }
 
-    pub fn handle_keyboard(&self, key: &str, pressed: bool, modifiers: KeyModifiers) {
+    pub fn handle_keyboard(&self, key: &str, pressed: bool, modifiers: KeyModifiers, repeat: bool) {
         let state = if pressed {
             KeyState::Down
         } else {
@@ -562,7 +575,7 @@ impl ServoUpstreamRuntime {
             Code::Unidentified,
             Location::Standard,
             servo_modifiers,
-            false,
+            repeat,
             false,
         );
         self.handle_input(InputEvent::Keyboard(event));
