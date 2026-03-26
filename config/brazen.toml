@@ -72,18 +72,23 @@ crash_dumps_dir = "default"
 active_profile = "default"
 
 [cache]
+capture_mode = "selective" # metadata-only | selective | archive | all
 metadata_capture = true
 selective_body_capture = true
 archive_replay_mode = false
 max_entry_bytes = 10485760
+max_total_bytes = 0 # 0 disables total-size GC
+gc_strategy = "none" # none | oldest
 third_party_mode = "metadata-only"
 storage_mode = "disk"
 host_allowlist = []
 host_denylist = []
+mime_denylist = []
 authenticated_only = false
 capture_html_json_css_js = true
 capture_media = true
 gc_max_entries = 5000
+dedupe_bodies = true
 mime_allowlist = [
   "text/html",
   "application/json",
@@ -91,6 +96,9 @@ mime_allowlist = [
   "application/javascript",
   "image/png",
 ]
+
+[cache.host_overrides]
+# "example.com" = { capture_mode = "all", capture_body = true, max_entry_bytes = 1048576 }
 
 [permissions]
 default = "ask"

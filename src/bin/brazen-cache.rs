@@ -9,6 +9,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut mime = None;
     let mut hash = None;
     let mut session_id = None;
+    let mut tab_id = None;
+    let mut status_code = None;
     let mut export_path = None;
     let mut import_path = None;
     let mut manifest_path = None;
@@ -32,6 +34,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--session" => {
                 i += 1;
                 session_id = args.get(i).cloned();
+            }
+            "--tab" => {
+                i += 1;
+                tab_id = args.get(i).cloned();
+            }
+            "--status" => {
+                i += 1;
+                status_code = args.get(i).and_then(|value| value.parse::<u16>().ok());
             }
             "--export" => {
                 i += 1;
@@ -83,6 +93,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         mime,
         hash,
         session_id,
+        tab_id,
+        status_code,
     };
     let results = store.query(query);
     for entry in results {

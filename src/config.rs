@@ -63,12 +63,46 @@ impl BrazenConfig {
                 "cache.max_entry_bytes must be greater than zero".to_string(),
             ));
         }
+        match self.cache.capture_mode.as_str() {
+            "metadata-only" | "selective" | "archive" | "all" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "cache.capture_mode must be metadata-only, selective, archive, or all"
+                        .to_string(),
+                ));
+            }
+        }
+        match self.cache.gc_strategy.as_str() {
+            "none" | "oldest" => {}
+            _ => {
+                return Err(ConfigError::Validation(
+                    "cache.gc_strategy must be none or oldest".to_string(),
+                ));
+            }
+        }
         match self.cache.storage_mode.as_str() {
             "memory" | "disk" | "archive" => {}
             _ => {
                 return Err(ConfigError::Validation(
                     "cache.storage_mode must be memory, disk, or archive".to_string(),
                 ));
+            }
+        }
+        for (host, policy) in &self.cache.host_overrides {
+            if host.trim().is_empty() {
+                return Err(ConfigError::Validation(
+                    "cache.host_overrides must not contain empty host keys".to_string(),
+                ));
+            }
+            if let Some(mode) = &policy.capture_mode {
+                match mode.as_str() {
+                    "metadata-only" | "selective" | "archive" | "all" => {}
+                    _ => {
+                        return Err(ConfigError::Validation(format!(
+                            "cache.host_overrides.{host}.capture_mode is invalid"
+                        )));
+                    }
+                }
             }
         }
         if self.profiles.active_profile.trim().is_empty() {
@@ -510,12 +544,17 @@ impl Default for ProfileConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CacheConfig {
+    pub capture_mode: String,
     pub metadata_capture: bool,
     pub selective_body_capture: bool,
     pub archive_replay_mode: bool,
     pub max_entry_bytes: u64,
+    pub max_total_bytes: u64,
+    pub gc_strategy: String,
     pub third_party_mode: String,
     pub mime_allowlist: Vec<String>,
+    pub mime_denylist: Vec<String>,
+    pub host_overrides: std::collections::BTreeMap<String, HostCapturePolicy>,
     pub host_allowlist: Vec<String>,
     pub host_denylist: Vec<String>,
     pub authenticated_only: bool,
@@ -523,15 +562,19 @@ pub struct CacheConfig {
     pub capture_media: bool,
     pub gc_max_entries: u32,
     pub storage_mode: String,
+    pub dedupe_bodies: bool,
 }
 
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
+            capture_mode: "selective".to_string(),
             metadata_capture: true,
             selective_body_capture: true,
             archive_replay_mode: false,
             max_entry_bytes: 10 * 1024 * 1024,
+            max_total_bytes: 0,
+            gc_strategy: "none".to_string(),
             third_party_mode: "metadata-only".to_string(),
             mime_allowlist: vec![
                 "text/html".to_string(),
@@ -540,6 +583,8 @@ impl Default for CacheConfig {
                 "application/javascript".to_string(),
                 "image/png".to_string(),
             ],
+            mime_denylist: Vec::new(),
+            host_overrides: std::collections::BTreeMap::new(),
             host_allowlist: Vec::new(),
             host_denylist: Vec::new(),
             authenticated_only: false,
@@ -547,8 +592,19 @@ impl Default for CacheConfig {
             capture_media: true,
             gc_max_entries: 5000,
             storage_mode: "disk".to_string(),
+            dedupe_bodies: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct HostCapturePolicy {
+    pub capture_mode: Option<String>,
+    pub capture_body: Option<bool>,
+    pub max_entry_bytes: Option<u64>,
+    pub mime_allowlist: Vec<String>,
+    pub mime_denylist: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

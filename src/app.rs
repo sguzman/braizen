@@ -333,6 +333,9 @@ pub struct BrazenApp {
     cache_query_mime: String,
     cache_query_hash: String,
     cache_query_session: String,
+    cache_query_tab: String,
+    cache_query_status: String,
+    cache_selected_asset: Option<String>,
     cache_export_path: String,
     cache_import_path: String,
     cache_manifest_path: String,
@@ -394,6 +397,9 @@ impl BrazenApp {
             cache_query_mime: String::new(),
             cache_query_hash: String::new(),
             cache_query_session: String::new(),
+            cache_query_tab: String::new(),
+            cache_query_status: String::new(),
+            cache_selected_asset: None,
             cache_export_path: "cache-export.json".to_string(),
             cache_import_path: "cache-import.json".to_string(),
             cache_manifest_path: "cache-manifest.json".to_string(),
@@ -945,6 +951,18 @@ impl BrazenApp {
     fn render_cache_panel(&mut self, ui: &mut eframe::egui::Ui) {
         ui.separator();
         ui.heading("Cache");
+        let stats = self.cache_store.stats();
+        ui.label(format!(
+            "Entries: {} | Bodies: {} | Blobs: {} | Bytes: {} | Ratio: {:.2}",
+            stats.entries,
+            stats.captured_with_body,
+            stats.unique_blobs,
+            stats.total_bytes,
+            stats.capture_ratio
+        ));
+        if let Some(last) = self.cache_store.latest_entry() {
+            ui.label(format!("Last capture: {} {}", last.created_at, last.url));
+        }
         ui.horizontal(|ui| {
             if ui.button("Sim Capture").clicked() {
                 let mut headers = std::collections::BTreeMap::new();
@@ -953,6 +971,9 @@ impl BrazenApp {
                 let tab_id = Some(self.shell_state.session.active_tab_mut().id.0.to_string());
                 let _ = self.cache_store.record_asset(
                     &self.shell_state.active_tab.current_url,
+                    None,
+                    Some("GET".to_string()),
+                    Some(200),
                     "text/html",
                     Some(b"<html><body>Brazen</body></html>"),
                     headers,
@@ -1008,12 +1029,22 @@ impl BrazenApp {
             ui.label("Session");
             ui.text_edit_singleline(&mut self.cache_query_session);
         });
+        ui.horizontal(|ui| {
+            ui.label("Tab");
+            ui.text_edit_singleline(&mut self.cache_query_tab);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Status");
+            ui.text_edit_singleline(&mut self.cache_query_status);
+        });
 
         let query = AssetQuery {
             url: empty_to_none(&self.cache_query_url),
             mime: empty_to_none(&self.cache_query_mime),
             hash: empty_to_none(&self.cache_query_hash),
             session_id: empty_to_none(&self.cache_query_session),
+            tab_id: empty_to_none(&self.cache_query_tab),
+            status_code: self.cache_query_status.trim().parse::<u16>().ok(),
         };
         let results = self.cache_store.query(query);
         ui.label(format!(
@@ -1022,9 +1053,27 @@ impl BrazenApp {
             self.cache_store.storage_mode()
         ));
         ui.label(format!("Matches: {}", results.len()));
+        ui.separator();
+        ui.label("Recent");
+        for entry in self.cache_store.entries().iter().rev().take(5) {
+            ui.label(format!("{} {}", entry.created_at, entry.url));
+        }
+        ui.separator();
+        ui.label("Matches (latest)");
         for entry in results.iter().rev().take(5) {
             ui.horizontal(|ui| {
-                ui.label(format!("{} {}", entry.mime, entry.url));
+                ui.label(format!(
+                    "{} {} {}",
+                    entry
+                        .status_code
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "-".to_string()),
+                    entry.mime,
+                    entry.url
+                ));
+                if ui.button("Details").clicked() {
+                    self.cache_selected_asset = Some(entry.asset_id.clone());
+                }
                 if let Some(hash) = &entry.hash {
                     if entry.pinned {
                         if ui.button("Unpin").clicked() {
@@ -1037,6 +1086,45 @@ impl BrazenApp {
                     }
                 }
             });
+        }
+        if let Some(selected) = self.cache_selected_asset.clone() {
+            if let Some(entry) = self.cache_store.find_by_id_or_hash(&selected) {
+                ui.separator();
+                ui.label(format!("Asset: {}", entry.asset_id));
+                ui.label(format!("URL: {}", entry.url));
+                if let Some(final_url) = &entry.final_url {
+                    ui.label(format!("Final URL: {}", final_url));
+                }
+                ui.label(format!(
+                    "Method/Status: {} {}",
+                    entry.method.as_deref().unwrap_or("-"),
+                    entry
+                        .status_code
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "-".to_string())
+                ));
+                ui.label(format!("MIME: {}", entry.mime));
+                ui.label(format!(
+                    "Hash: {}",
+                    entry.hash.clone().unwrap_or_else(|| "-".to_string())
+                ));
+                if let Some(body_key) = &entry.body_key {
+                    ui.label(format!(
+                        "Body key: {} ({})",
+                        body_key,
+                        self.cache_store.blob_path(body_key).display()
+                    ));
+                }
+                ui.label(format!(
+                    "Timing: start={:?} finish={:?} duration_ms={:?}",
+                    entry.request_started_at, entry.response_finished_at, entry.duration_ms
+                ));
+                ui.label(format!("Storage: {:?}", entry.storage_mode));
+                ui.label(format!("Headers: {}", entry.response_headers.len()));
+                if ui.button("Clear Details").clicked() {
+                    self.cache_selected_asset = None;
+                }
+            }
         }
     }
 }
@@ -1083,6 +1171,14 @@ impl eframe::App for BrazenApp {
                         "no"
                     }
                 ));
+                let cache_entries = self.cache_store.entries().len();
+                let cache_last = self
+                    .cache_store
+                    .latest_entry()
+                    .map(|entry| entry.created_at.clone())
+                    .unwrap_or_else(|| "-".to_string());
+                ui.separator();
+                ui.label(format!("cache: {} last: {}", cache_entries, cache_last));
             });
 
             ui.horizontal(|ui| {

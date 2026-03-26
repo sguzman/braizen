@@ -1,4 +1,4 @@
-use brazen::cli_cache::{CacheCliOptions, fetch_and_store};
+use brazen::cli_cache::{CacheCliCommand, CacheCliOptions, fetch_and_store};
 use brazen::config::BrazenConfig;
 use brazen::platform_paths::RuntimePaths;
 use tempfile::tempdir;
@@ -33,13 +33,13 @@ fn cache_cli_fetch_records_asset() {
     let config = BrazenConfig::default();
 
     let options = CacheCliOptions {
-        url,
         profile: None,
         timeout_secs: 10,
         stats: true,
         insecure: false,
+        command: CacheCliCommand::Fetch { url: url.clone() },
     };
-    let result = fetch_and_store(&config, &runtime, &options).unwrap();
+    let result = fetch_and_store(&config, &runtime, &options, &url).unwrap();
     assert_eq!(result.metadata.mime, "text/plain");
     assert_eq!(result.metadata.size_bytes, "brazen-cache".len() as u64);
     assert!(result.metadata.hash.is_some());
