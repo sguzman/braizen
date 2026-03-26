@@ -1,3 +1,4 @@
+use brazen::cli_cache::run_cache_cli;
 use brazen::{BootstrapOptions, BrazenApp, ServoEngineFactory, bootstrap};
 use tracing::{error, info};
 
@@ -10,6 +11,10 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 && args[1] == "cache" {
+        return run_cache_cli(&args[1..]);
+    }
     let bootstrap = bootstrap(BootstrapOptions { config_path: None }, &ServoEngineFactory)?;
     info!("starting brazen shell");
 

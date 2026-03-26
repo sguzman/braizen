@@ -315,6 +315,7 @@ pub struct BrazenApp {
     frame_probe: Option<crate::rendering::FrameProbeStats>,
     blank_frame_streak: u32,
     blank_frame_warned: bool,
+    render_capture_logged: bool,
     load_status_started_at: Option<Instant>,
     load_status_warned: bool,
     last_nav_url: Option<String>,
@@ -375,6 +376,7 @@ impl BrazenApp {
             frame_probe: None,
             blank_frame_streak: 0,
             blank_frame_warned: false,
+            render_capture_logged: false,
             load_status_started_at: None,
             load_status_warned: false,
             last_nav_url: None,
@@ -408,6 +410,7 @@ impl BrazenApp {
             self.last_nav_url = self.shell_state.last_committed_url.clone();
             self.blank_frame_streak = 0;
             self.blank_frame_warned = false;
+            self.render_capture_logged = false;
             self.load_status_started_at = None;
             self.load_status_warned = false;
             self.shell_state.render_warning = None;
@@ -518,6 +521,20 @@ impl BrazenApp {
                         && self.shell_state.load_progress > 0.0
                     {
                         self.blank_frame_warned = true;
+                        if !self.render_capture_logged {
+                            let (r, g, b, a) =
+                                Self::sample_pixel_rgba(&pixels, frame.width, frame.height);
+                            tracing::warn!(
+                                target: "brazen::render",
+                                ratio = stats.non_white_ratio,
+                                samples = stats.sample_count,
+                                alpha_min = stats.alpha_min,
+                                alpha_avg = stats.alpha_avg,
+                                sample = format!("{r},{g},{b},{a}"),
+                                "render capture still blank after navigation"
+                            );
+                            self.render_capture_logged = true;
+                        }
                         tracing::warn!(
                             target: "brazen::render",
                             ratio = stats.non_white_ratio,
@@ -530,6 +547,17 @@ impl BrazenApp {
                 } else {
                     self.blank_frame_streak = 0;
                     self.blank_frame_warned = false;
+                    if !self.render_capture_logged {
+                        tracing::info!(
+                            target: "brazen::render",
+                            ratio = stats.non_white_ratio,
+                            samples = stats.sample_count,
+                            alpha_min = stats.alpha_min,
+                            alpha_avg = stats.alpha_avg,
+                            "render capture detected non-white content"
+                        );
+                        self.render_capture_logged = true;
+                    }
                 }
             }
         } else {
@@ -662,6 +690,26 @@ impl BrazenApp {
             "crash_dumps" => self.shell_state.runtime_paths.crash_dumps_dir.clone(),
             value => std::path::PathBuf::from(value),
         }
+    }
+
+    fn sample_pixel_rgba(pixels: &[u8], width: u32, height: u32) -> (u8, u8, u8, u8) {
+        let width = width as usize;
+        let height = height as usize;
+        if width == 0 || height == 0 {
+            return (0, 0, 0, 0);
+        }
+        let x = width / 2;
+        let y = height / 2;
+        let idx = (y.saturating_mul(width) + x).saturating_mul(4);
+        if idx + 3 >= pixels.len() {
+            return (0, 0, 0, 0);
+        }
+        (
+            pixels[idx],
+            pixels[idx + 1],
+            pixels[idx + 2],
+            pixels[idx + 3],
+        )
     }
 
     fn forward_input_events(&mut self, ctx: &eframe::egui::Context) {

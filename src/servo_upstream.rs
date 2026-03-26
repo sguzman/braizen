@@ -340,6 +340,7 @@ impl ServoUpstreamRuntime {
     }
 
     pub fn resize(&self, width: u32, height: u32) {
+        self.webview.resize(PhysicalSize::new(width, height));
         self.rendering_context
             .resize(PhysicalSize::new(width, height));
         self.frame_ready.store(true, Ordering::Release);
@@ -371,7 +372,6 @@ impl ServoUpstreamRuntime {
         }
         self.rendering_context.prepare_for_rendering();
         self.webview.paint();
-        self.rendering_context.present();
         let rect = DeviceIntRect::from_origin_and_size(
             DeviceIntPoint::new(0, 0),
             DeviceIntSize::new(size.width as i32, size.height as i32),
@@ -383,6 +383,7 @@ impl ServoUpstreamRuntime {
             "readback render surface"
         );
         let image = self.rendering_context.read_to_image(rect)?;
+        self.rendering_context.present();
         if let Some(probe) = &mut self.pixel_probe {
             if probe.pending {
                 Self::apply_pixel_probe(&self.pixel_format, probe, &image);

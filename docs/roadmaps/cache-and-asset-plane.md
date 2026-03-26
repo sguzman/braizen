@@ -46,5 +46,6 @@ Tracks request/response capture, asset storage, replay, and the “intimate brow
 - [x] Reconstruct captured sessions for replay/debugging
 - [x] Export/import captured asset sets
 - [x] Minimal CLI for asset queries
+- [x] CLI cache fetch + stats for on-demand captures
 - [x] JSON export format for assets and metadata
 - [x] Asset replay manifest format

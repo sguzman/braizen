@@ -86,3 +86,10 @@ Focuses on replacing the current stub renderer with actual Servo output. This is
 - [x] Keep debug pixel probe intact for format detection
 - [x] Gate probe metrics behind config toggle
 - [x] Preserve per-launch log behavior for diagnostics
+
+## Tranche 3: White Render Fixes (4 items)
+
+- [x] Read back pixels before presenting the software render surface
+- [x] Propagate viewport resize to Servo WebView instances
+- [x] Log render capture success/failure with probe alpha and sample RGB values
+- [x] Add a data-URL smoke test that asserts non-white pixels render

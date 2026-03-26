@@ -41,6 +41,14 @@ cargo run
 
 Brazen creates a default config on first launch if one is missing in the platform config directory.
 
+### Cache CLI
+
+Fetch and cache a URL directly from the command line:
+
+```bash
+cargo run -- cache https://example.com --stats
+```
+
 ### Configuration
 
 The canonical sample config is at [`config/brazen.toml`](/win/linux/Code/rust/brazen/config/brazen.toml).

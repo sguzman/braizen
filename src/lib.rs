@@ -1,5 +1,6 @@
 pub mod app;
 pub mod cache;
+pub mod cli_cache;
 pub mod commands;
 pub mod config;
 pub mod engine;

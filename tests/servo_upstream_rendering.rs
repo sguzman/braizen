@@ -1,7 +1,7 @@
 #[cfg(feature = "servo-upstream")]
 mod tests {
     use brazen::engine::{AlphaMode, ColorSpace, EngineFrame, PixelFormat};
-    use brazen::rendering::normalize_pixels;
+    use brazen::rendering::{normalize_pixels, probe_frame_stats};
     use brazen::servo_upstream::{ServoUpstreamConfig, ServoUpstreamRuntime};
 
     fn render_about_blank_frame() -> EngineFrame {
@@ -60,5 +60,45 @@ mod tests {
             assert!(diff.0 <= 8 && diff.1 <= 8 && diff.2 <= 8);
         }
         assert!(a.3 >= 240);
+    }
+
+    #[test]
+    fn data_url_renders_non_white_pixels() {
+        let config = ServoUpstreamConfig {
+            pixel_format: PixelFormat::Rgba8,
+            alpha_mode: AlphaMode::Straight,
+            color_space: ColorSpace::Srgb,
+            enable_pixel_probe: false,
+            resources_dir: None,
+        };
+        let mut runtime = ServoUpstreamRuntime::new(96, 96, config).expect("servo runtime");
+        runtime
+            .navigate("data:text/html,<style>body{margin:0;background:#00ff00}</style>")
+            .expect("navigate data url");
+
+        for _ in 0..120 {
+            runtime.spin();
+            if let Some(frame) = runtime.render_frame() {
+                let pixels = normalize_pixels(
+                    &EngineFrame {
+                        width: frame.width,
+                        height: frame.height,
+                        frame_number: 1,
+                        stride_bytes: frame.stride_bytes,
+                        pixel_format: frame.pixel_format,
+                        alpha_mode: frame.alpha_mode,
+                        color_space: frame.color_space,
+                        pixels: frame.pixels,
+                    },
+                    false,
+                );
+                if let Some(stats) = probe_frame_stats(&pixels, frame.width, frame.height, 128) {
+                    if stats.non_white_ratio > 0.01 {
+                        return;
+                    }
+                }
+            }
+        }
+        panic!("data url never produced non-white pixels");
     }
 }
