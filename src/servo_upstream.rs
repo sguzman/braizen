@@ -583,11 +583,15 @@ impl ServoUpstreamRuntime {
         self.handle_input(InputEvent::Keyboard(event));
     }
 
-    pub fn handle_ime(&self, text: String) {
+    pub fn handle_ime_composition(&self, state: CompositionState, text: String) {
         self.handle_input(InputEvent::Ime(ImeEvent::Composition(CompositionEvent {
-            state: CompositionState::Update,
+            state,
             data: text,
         })));
+    }
+
+    pub fn handle_ime_dismissed(&self) {
+        self.handle_input(InputEvent::Ime(ImeEvent::Dismissed));
     }
 }
 

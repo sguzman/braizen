@@ -1529,10 +1529,7 @@ impl BrazenApp {
                         if input_logging {
                             tracing::trace!(target: "brazen::input", "ime disabled");
                         }
-                        self.engine
-                            .handle_ime(crate::engine::ImeEvent::CompositionEnd {
-                                text: String::new(),
-                            });
+                        self.engine.handle_ime(crate::engine::ImeEvent::Dismissed);
                     }
                 },
                 eframe::egui::Event::Copy | eframe::egui::Event::Cut => {

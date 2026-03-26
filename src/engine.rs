@@ -66,6 +66,7 @@ pub enum ImeEvent {
     CompositionStart,
     CompositionUpdate { text: String },
     CompositionEnd { text: String },
+    Dismissed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

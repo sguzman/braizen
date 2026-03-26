@@ -46,3 +46,8 @@ Focuses on making the browser feel usable: accurate pointer/keyboard input, righ
 - [x] Add a manual input test page (data URL) with buttons/inputs.
 - [x] Add regression test for zoom behavior (Ctrl+wheel).
 - [x] Add regression test for right-click context menu event.
+
+## Text Input Fidelity
+
+- [x] Route plain text input to IME composition end events.
+- [x] Forward IME dismissals explicitly to Servo.

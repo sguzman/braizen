@@ -13,6 +13,8 @@ use crate::servo_runtime::{
 };
 #[cfg(feature = "servo-upstream")]
 use crate::servo_upstream::{ServoUpstreamConfig, ServoUpstreamRuntime, UpstreamSnapshot};
+#[cfg(feature = "servo-upstream")]
+use libservo::CompositionState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServoProcessModel {
@@ -550,7 +552,7 @@ impl ServoEmbedder {
             InputEvent::TextInput { text } => {
                 #[cfg(feature = "servo-upstream")]
                 if let Some(upstream) = &self.upstream {
-                    upstream.handle_ime(text.clone());
+                    upstream.handle_ime_composition(CompositionState::End, text.clone());
                 }
                 #[cfg(not(feature = "servo-upstream"))]
                 let _ = text;
@@ -567,11 +569,19 @@ impl ServoEmbedder {
         if let Some(upstream) = &self.upstream {
             match event {
                 crate::engine::ImeEvent::CompositionStart => {
-                    upstream.handle_ime(String::new());
+                    upstream.handle_ime_composition(CompositionState::Start, String::new());
                 }
                 crate::engine::ImeEvent::CompositionUpdate { text }
                 | crate::engine::ImeEvent::CompositionEnd { text } => {
-                    upstream.handle_ime(text.clone());
+                    let state = if matches!(event, crate::engine::ImeEvent::CompositionEnd { .. }) {
+                        CompositionState::End
+                    } else {
+                        CompositionState::Update
+                    };
+                    upstream.handle_ime_composition(state, text.clone());
+                }
+                crate::engine::ImeEvent::Dismissed => {
+                    upstream.handle_ime_dismissed();
                 }
             }
         }
