@@ -234,6 +234,13 @@ pub fn build_shell_state(
                 config.permissions.decision_for(&Capability::AiToolUse)
             ),
         ),
+        (
+            Capability::VirtualResourceMount.label().to_string(),
+            format!(
+                "{:?}",
+                config.permissions.decision_for(&Capability::VirtualResourceMount)
+            ),
+        ),
     ];
 
     let session = load_session(&paths.session_path).unwrap_or_else(|_| {
