@@ -18,6 +18,8 @@ Tracks the brokered adapters between Brazen and local resources on the host mach
 - [ ] Git repository broker
 - [ ] Media / transcript broker
 - [ ] AI tool / MCP broker
+- [ ] Screen / Window capture broker (AI Vision)
+- [ ] Terminal-to-Chatbox bridge (e.g. bridging local CLI to web-agent inputs)
 
 ## Broker Design
 

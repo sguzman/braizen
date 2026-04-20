@@ -18,6 +18,8 @@ Tracks local sockets, WebSocket APIs, subscriptions, and browser-state access fo
 - [x] Cached asset body retrieval API
 - [x] Event subscription API for navigation and capability activity
 - [ ] TTS and reading-queue control API
+- [ ] Tab / Window screenshot API (Base64/Raw)
+- [ ] Virtual Resource Mount control API
 
 ## Transport And Trust
 

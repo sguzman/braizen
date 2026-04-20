@@ -20,6 +20,7 @@ This file is the index. Each linked roadmap tracks one dimension and should only
 - [Media, Reading, And TTS](./roadmaps/media-reading-and-tts.md)
 - [Persistence And Profiles](./roadmaps/persistence-and-profiles.md)
 - [Observability And Quality](./roadmaps/observability-and-quality.md)
+- [Virtual Resource Injection](./roadmaps/resource-injection.md)
 
 ## Scope Notes
 
@@ -31,3 +32,4 @@ This file is the index. Each linked roadmap tracks one dimension and should only
 - Automation/API covers localhost or socket-facing control surfaces for tabs, cache, article text, and subscriptions.
 - Cache, extraction, knowledge, and media/reading are split because each one can advance at a different pace and has distinct data shapes.
 - Persistence/profiles and observability/quality stay separate because they cut across everything else and need explicit ownership.
+- Virtual resource injection covers the mechanism for mounting local files, terminal sessions, and MCP tools into the web context for AI agents.
