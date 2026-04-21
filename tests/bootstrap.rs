@@ -296,6 +296,7 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         find_query: String::new(),
         capabilities_snapshot: Vec::new(),
         automation_activities: Vec::new(),
+        pending_window_screenshot: std::sync::Arc::new(std::sync::Mutex::new(None)),
         mount_manager: brazen::mounts::MountManager::new(),
         runtime_paths,
     };
@@ -389,6 +390,7 @@ fn command_dispatch_rejects_invalid_urls() {
         find_query: String::new(),
         capabilities_snapshot: Vec::new(),
         automation_activities: Vec::new(),
+        pending_window_screenshot: std::sync::Arc::new(std::sync::Mutex::new(None)),
         mount_manager: brazen::mounts::MountManager::new(),
         runtime_paths,
     };

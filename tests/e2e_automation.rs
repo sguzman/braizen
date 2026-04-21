@@ -234,6 +234,17 @@ async fn e2e_boot_connect_logs_and_shutdown() {
     assert!(response["result"]["width"].as_u64().unwrap_or(0) > 0, "expected width");
     assert!(response["result"]["height"].as_u64().unwrap_or(0) > 0, "expected height");
 
+    // Window screenshot returns base64 PNG + dimensions (shell UI screenshot, not engine frame).
+    let response = ws_roundtrip(&url, json!({"id":"t5b","type":"screenshot-window"})).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "screenshot-window failed: {response}");
+    let b64 = response["result"]["png_base64"].as_str().unwrap_or("");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .expect("base64 decode");
+    assert!(bytes.len() > 32, "expected png bytes");
+    assert!(response["result"]["width"].as_u64().unwrap_or(0) > 0, "expected width");
+    assert!(response["result"]["height"].as_u64().unwrap_or(0) > 0, "expected height");
+
     // Request shutdown and ensure process exits.
     let response = ws_roundtrip(&url, json!({"id":"t6","type":"shutdown"})).await;
     assert!(response["ok"].as_bool().unwrap_or(false), "shutdown failed: {response}");

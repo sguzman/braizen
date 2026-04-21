@@ -29,6 +29,7 @@ use std::io::Cursor;
 use std::path::Path;
 use std::collections::HashMap;
 use uuid::Uuid;
+use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationSnapshot {
@@ -152,6 +153,17 @@ pub struct AutomationCapabilityEvent {
 pub enum AutomationEvent {
     Navigation(AutomationNavigationEvent),
     Capability(AutomationCapabilityEvent),
+    TerminalOutput(AutomationTerminalOutputEvent),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomationTerminalOutputEvent {
+    pub session_id: String,
+    pub stream: String,
+    pub chunk: String,
+    pub done: bool,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,6 +239,14 @@ pub enum AutomationRequest {
         cmd: String,
         args: Vec<String>,
         cwd: Option<String>,
+    },
+    TerminalExecStream {
+        cmd: String,
+        args: Vec<String>,
+        cwd: Option<String>,
+    },
+    TerminalCancel {
+        session_id: String,
     },
     FsList {
         url: String,
@@ -496,6 +516,7 @@ struct AutomationServerState {
     audit_logger: Arc<AuditLogger>,
     pending_approvals: Arc<RwLock<HashMap<String, PendingApproval>>>,
     rate_limit: Arc<RwLock<HashMap<String, (Instant, u32)>>>,
+    terminal_sessions: Arc<RwLock<HashMap<String, Arc<tokio::sync::Mutex<tokio::process::Child>>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -519,6 +540,7 @@ impl AutomationServerState {
             audit_logger,
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             rate_limit: Arc::new(RwLock::new(HashMap::new())),
+            terminal_sessions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -722,6 +744,7 @@ async fn handle_socket(
                     let topic = match &event {
                         AutomationEvent::Navigation(_) => "navigation",
                         AutomationEvent::Capability(_) => "capability",
+                        AutomationEvent::TerminalOutput(_) => "terminal",
                     };
                     if subscribed_topics.iter().any(|value| value == topic) {
                         let payload = serde_json::to_string(&AutomationEnvelope{ id: None, payload: event })
@@ -1122,30 +1145,72 @@ async fn handle_request(
             }
         }
         AutomationRequest::CacheStats => {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = state.handle.command_tx.send(AutomationCommand::CacheStats { response_tx: tx });
-            match rx.await {
-                Ok(Ok(stats)) => Some(serde_json::to_string(&AutomationResponse { id, ok: true, result: Some(stats), error: None }).unwrap()),
-                Ok(Err(error)) => Some(error_response(id, &error)),
-                Err(_) => Some(error_response(id, "internal error")),
+            if let Err(error) = ensure_cache_api(state) {
+                return Some(error_response(id, &error));
             }
+            let store = AssetStore::load(
+                state.handle.cache_config.clone(),
+                &state.handle.runtime_paths,
+                state.handle.profile_id.clone(),
+            );
+            let stats = store.stats();
+            Some(
+                serde_json::to_string(&AutomationResponse {
+                    id,
+                    ok: true,
+                    result: Some(stats),
+                    error: None,
+                })
+                .unwrap(),
+            )
         }
         AutomationRequest::CacheQuery { query, limit } => {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = state.handle.command_tx.send(AutomationCommand::CacheQuery { query, limit, response_tx: tx });
-            match rx.await {
-                Ok(Ok(assets)) => Some(serde_json::to_string(&AutomationResponse { id, ok: true, result: Some(assets), error: None }).unwrap()),
-                Ok(Err(error)) => Some(error_response(id, &error)),
-                Err(_) => Some(error_response(id, "internal error")),
+            if let Err(error) = ensure_cache_api(state) {
+                return Some(error_response(id, &error));
             }
+            let store = AssetStore::load(
+                state.handle.cache_config.clone(),
+                &state.handle.runtime_paths,
+                state.handle.profile_id.clone(),
+            );
+            let query = query.unwrap_or(AssetQuery {
+                url: None,
+                mime: None,
+                hash: None,
+                session_id: None,
+                tab_id: None,
+                status_code: None,
+            });
+            let mut assets = store.query(query);
+            if let Some(limit) = limit {
+                assets.truncate(limit.max(0));
+            }
+            Some(
+                serde_json::to_string(&AutomationResponse {
+                    id,
+                    ok: true,
+                    result: Some(assets),
+                    error: None,
+                })
+                .unwrap(),
+            )
         }
         AutomationRequest::CacheBody { asset_id } => {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = state.handle.command_tx.send(AutomationCommand::CacheBody { asset_id, response_tx: tx });
-            match rx.await {
-                Ok(Ok(body)) => Some(serde_json::to_string(&AutomationResponse { id, ok: true, result: Some(body), error: None }).unwrap()),
-                Ok(Err(error)) => Some(error_response(id, &error)),
-                Err(_) => Some(error_response(id, "internal error")),
+            if let Err(error) = ensure_cache_api(state) {
+                return Some(error_response(id, &error));
+            }
+            let body = load_cache_body(&state.handle, &asset_id);
+            match body {
+                Ok(body) => Some(
+                    serde_json::to_string(&AutomationResponse {
+                        id,
+                        ok: true,
+                        result: Some(body),
+                        error: None,
+                    })
+                    .unwrap(),
+                ),
+                Err(error) => Some(error_response(id, &error)),
             }
         }
         AutomationRequest::TtsControl { action } => {
@@ -1273,6 +1338,249 @@ async fn handle_request(
                 })
                 .unwrap(),
             )
+        }
+        AutomationRequest::TerminalExecStream { cmd, args, cwd } => {
+            if let Err(error) = state.check_rate_limit("terminal-exec-stream", 30) {
+                return Some(error_response(id, &error));
+            }
+            if let Err(error) = state.check_permission(Capability::TerminalExec) {
+                if error == "approval-required" {
+                    let approval_id = Uuid::new_v4().to_string();
+                    let now = Utc::now().to_rfc3339();
+                    let pending = PendingApproval {
+                        capability: Capability::TerminalExec,
+                        request: AutomationRequest::TerminalExecStream {
+                            cmd: cmd.clone(),
+                            args: args.clone(),
+                            cwd: cwd.clone(),
+                        },
+                        user_agent: user_agent.clone(),
+                        client_ip: client_ip.clone(),
+                    };
+                    state
+                        .pending_approvals
+                        .write()
+                        .expect("pending approvals lock")
+                        .insert(approval_id.clone(), pending);
+                    return Some(
+                        serde_json::to_string(&AutomationResponse {
+                            id,
+                            ok: false,
+                            result: Some(serde_json::json!({
+                                "approval_id": approval_id,
+                                "capability": Capability::TerminalExec.label(),
+                                "created_at": now,
+                                "summary": {
+                                    "cmd": cmd,
+                                    "args": args,
+                                    "cwd": cwd,
+                                }
+                            })),
+                            error: Some("approval-required".to_string()),
+                        })
+                        .unwrap(),
+                    );
+                }
+                return Some(error_response(id, &error));
+            }
+
+            let started = std::time::Instant::now();
+            let config = state.handle.terminal_config.clone();
+            if !config.allowlist.is_empty()
+                && !config.allowlist.iter().any(|allowed| allowed == &cmd)
+            {
+                return Some(error_response(id, "command not allowlisted"));
+            }
+            if args.len() > config.max_args {
+                return Some(error_response(id, "too many args"));
+            }
+
+            let session_id = Uuid::new_v4().to_string();
+            let session_id_for_task = session_id.clone();
+            let mut command = tokio::process::Command::new(&cmd);
+            command.args(&args);
+            if let Some(cwd) = &cwd {
+                command.current_dir(cwd);
+            }
+            command.stdout(std::process::Stdio::piped());
+            command.stderr(std::process::Stdio::piped());
+
+            let child = match command.spawn() {
+                Ok(child) => child,
+                Err(error) => return Some(error_response(id, &format!("Failed to spawn: {error}"))),
+            };
+            let child = Arc::new(tokio::sync::Mutex::new(child));
+            state
+                .terminal_sessions
+                .write()
+                .expect("terminal sessions lock")
+                .insert(session_id.clone(), child.clone());
+
+            let event_tx = state.handle.event_tx.clone();
+            let terminal_sessions = state.terminal_sessions.clone();
+            tokio::spawn(async move {
+                let timeout = Duration::from_millis(config.timeout_ms);
+                let deadline = tokio::time::sleep(timeout);
+                tokio::pin!(deadline);
+
+                let (stdout, stderr) = {
+                    let mut lock = child.lock().await;
+                    (lock.stdout.take(), lock.stderr.take())
+                };
+
+                let mut stdout_task = None;
+                if let Some(stdout) = stdout {
+                    let tx = event_tx.clone();
+                    let sid = session_id_for_task.clone();
+                    let max = config.max_stdout_bytes;
+                    stdout_task = Some(tokio::spawn(async move {
+                        let mut reader = BufReader::new(stdout);
+                        let mut buf = String::new();
+                        let mut sent = 0usize;
+                        loop {
+                            buf.clear();
+                            let read = reader.read_line(&mut buf).await.unwrap_or(0);
+                            if read == 0 {
+                                break;
+                            }
+                            if sent >= max {
+                                break;
+                            }
+                            let remaining = max.saturating_sub(sent);
+                            let chunk = if buf.len() > remaining {
+                                buf[..remaining].to_string()
+                            } else {
+                                buf.clone()
+                            };
+                            sent += chunk.len();
+                            let _ = tx.send(AutomationEvent::TerminalOutput(
+                                AutomationTerminalOutputEvent {
+                                    session_id: sid.clone(),
+                                    stream: "stdout".to_string(),
+                                    chunk,
+                                    done: false,
+                                    exit_code: None,
+                                    error: None,
+                                },
+                            ));
+                        }
+                    }));
+                }
+
+                let mut stderr_task = None;
+                if let Some(stderr) = stderr {
+                    let tx = event_tx.clone();
+                    let sid = session_id_for_task.clone();
+                    let max = config.max_stderr_bytes;
+                    stderr_task = Some(tokio::spawn(async move {
+                        let mut reader = BufReader::new(stderr);
+                        let mut buf = String::new();
+                        let mut sent = 0usize;
+                        loop {
+                            buf.clear();
+                            let read = reader.read_line(&mut buf).await.unwrap_or(0);
+                            if read == 0 {
+                                break;
+                            }
+                            if sent >= max {
+                                break;
+                            }
+                            let remaining = max.saturating_sub(sent);
+                            let chunk = if buf.len() > remaining {
+                                buf[..remaining].to_string()
+                            } else {
+                                buf.clone()
+                            };
+                            sent += chunk.len();
+                            let _ = tx.send(AutomationEvent::TerminalOutput(
+                                AutomationTerminalOutputEvent {
+                                    session_id: sid.clone(),
+                                    stream: "stderr".to_string(),
+                                    chunk,
+                                    done: false,
+                                    exit_code: None,
+                                    error: None,
+                                },
+                            ));
+                        }
+                    }));
+                }
+
+                let mut exit_code: Option<i32> = None;
+                let mut error: Option<String> = None;
+                tokio::select! {
+                    _ = &mut deadline => {
+                        error = Some("timeout".to_string());
+                        let mut lock = child.lock().await;
+                        let _ = lock.kill().await;
+                    }
+                    status = async {
+                        let mut lock = child.lock().await;
+                        lock.wait().await
+                    } => {
+                        match status {
+                            Ok(status) => { exit_code = status.code(); }
+                            Err(e) => { error = Some(format!("wait failed: {e}")); }
+                        }
+                    }
+                }
+
+                if let Some(task) = stdout_task { let _ = task.await; }
+                if let Some(task) = stderr_task { let _ = task.await; }
+
+                terminal_sessions
+                    .write()
+                    .expect("terminal sessions lock")
+                    .remove(&session_id_for_task);
+
+                let _ = event_tx.send(AutomationEvent::TerminalOutput(
+                    AutomationTerminalOutputEvent {
+                        session_id: session_id_for_task.clone(),
+                        stream: "exit".to_string(),
+                        chunk: format!("duration_ms={}", started.elapsed().as_millis()),
+                        done: true,
+                        exit_code,
+                        error,
+                    },
+                ));
+            });
+
+            Some(
+                serde_json::to_string(&AutomationResponse {
+                    id,
+                    ok: true,
+                    result: Some(serde_json::json!({
+                        "session_id": session_id,
+                        "cmd": cmd,
+                        "args": args,
+                        "cwd": cwd,
+                    })),
+                    error: None,
+                })
+                .unwrap(),
+            )
+        }
+        AutomationRequest::TerminalCancel { session_id } => {
+            if let Err(error) = state.check_rate_limit("terminal-cancel", 60) {
+                return Some(error_response(id, &error));
+            }
+            if let Err(error) = state.check_permission(Capability::TerminalExec) {
+                return Some(error_response(id, &error));
+            }
+            let session = state
+                .terminal_sessions
+                .read()
+                .expect("terminal sessions lock")
+                .get(&session_id)
+                .cloned();
+            let Some(session) = session else {
+                return Some(error_response(id, "session not found"));
+            };
+            tokio::spawn(async move {
+                let mut lock = session.lock().await;
+                let _ = lock.kill().await;
+            });
+            Some(ok_response(id))
         }
         AutomationRequest::FsList { url } => {
             if let Err(error) = state.check_permission(Capability::FsRead) {
@@ -1661,13 +1969,51 @@ async fn handle_request(
             let _ = state.handle.command_tx.send(AutomationCommand::ScreenshotWindow { response_tx: tx });
             match rx.await {
                 Ok(Ok(frame)) => {
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&frame.pixels);
-                    let json = serde_json::json!({
-                        "width": frame.width,
-                        "height": frame.height,
-                        "png_base64": b64
-                    });
-                    Some(serde_json::to_string(&AutomationResponse { id, ok: true, result: Some(json), error: None }).unwrap())
+                    let mut png_data = Vec::new();
+                    let mut cursor = Cursor::new(&mut png_data);
+
+                    let result: Result<(), String> = match frame.pixel_format {
+                        PixelFormat::Rgba8 => {
+                            let img_opt =
+                                image::RgbaImage::from_raw(frame.width, frame.height, frame.pixels);
+                            if let Some(img) = img_opt {
+                                img.write_to(&mut cursor, ImageFormat::Png)
+                                    .map_err(|e| e.to_string())
+                            } else {
+                                Err("Failed to create image from raw pixels".to_string())
+                            }
+                        }
+                        PixelFormat::Bgra8 => {
+                            let mut rgba_pixels = Vec::with_capacity(frame.pixels.len());
+                            for chunk in frame.pixels.chunks_exact(4) {
+                                rgba_pixels.push(chunk[2]); // R
+                                rgba_pixels.push(chunk[1]); // G
+                                rgba_pixels.push(chunk[0]); // B
+                                rgba_pixels.push(chunk[3]); // A
+                            }
+                            let img_opt =
+                                image::RgbaImage::from_raw(frame.width, frame.height, rgba_pixels);
+                            if let Some(img) = img_opt {
+                                img.write_to(&mut cursor, ImageFormat::Png)
+                                    .map_err(|e| e.to_string())
+                            } else {
+                                Err("Failed to create image from raw pixels".to_string())
+                            }
+                        }
+                    };
+
+                    match result {
+                        Ok(()) => {
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&png_data);
+                            let json = serde_json::json!({
+                                "width": frame.width,
+                                "height": frame.height,
+                                "png_base64": b64,
+                            });
+                            Some(serde_json::to_string(&AutomationResponse { id, ok: true, result: Some(json), error: None }).unwrap())
+                        }
+                        Err(error) => Some(error_response(id, &error)),
+                    }
                 },
                 Ok(Err(error)) => Some(error_response(id, &error)),
                 Err(_) => Some(error_response(id, "internal error")),
@@ -2056,6 +2402,7 @@ mod tests {
     use super::*;
     use crate::platform_paths::RuntimePaths;
     use tempfile::tempdir;
+    use tokio::time::{timeout, Duration};
 
     #[test]
     fn automation_request_parses_tab_list() {
@@ -2670,5 +3017,284 @@ mod tests {
                 .expect("response");
         let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
         assert!(parsed.ok);
+    }
+
+    #[tokio::test]
+    async fn terminal_exec_stream_emits_output_and_done() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::TerminalExec, PermissionDecision::Allow);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            terminal: crate::config::TerminalConfig {
+                allowlist: vec!["echo".to_string()],
+                timeout_ms: 2000,
+                ..crate::config::TerminalConfig::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state =
+            AutomationServerState::new(config.automation.clone(), runtime.handle.clone(), audit_logger);
+
+        let mut subscribed_topics = vec!["terminal".to_string()];
+        let mut receiver = runtime.handle.event_tx.subscribe();
+
+        let raw =
+            r#"{"id":"1","type":"terminal-exec-stream","cmd":"echo","args":["hi"],"cwd":null}"#;
+        let response = handle_request(&state, raw, &mut subscribed_topics, None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+        let session_id = parsed
+            .result
+            .as_ref()
+            .and_then(|v| v.get("session_id"))
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
+
+        let mut saw_hi = false;
+        let mut saw_done = false;
+        for _ in 0..40 {
+            if let Ok(Ok(AutomationEvent::TerminalOutput(ev))) =
+                timeout(Duration::from_millis(200), receiver.recv()).await
+            {
+                if ev.session_id != session_id {
+                    continue;
+                }
+                if ev.stream == "stdout" && ev.chunk.contains("hi") {
+                    saw_hi = true;
+                }
+                if ev.done {
+                    saw_done = true;
+                    break;
+                }
+            }
+        }
+        assert!(saw_hi, "expected stdout chunk to include hi");
+        assert!(saw_done, "expected done event");
+    }
+
+    #[tokio::test]
+    async fn terminal_cancel_kills_running_session() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::TerminalExec, PermissionDecision::Allow);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            terminal: crate::config::TerminalConfig {
+                allowlist: vec!["sh".to_string()],
+                timeout_ms: 10_000,
+                ..crate::config::TerminalConfig::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state =
+            AutomationServerState::new(config.automation.clone(), runtime.handle.clone(), audit_logger);
+
+        let mut subscribed_topics = vec!["terminal".to_string()];
+        let mut receiver = runtime.handle.event_tx.subscribe();
+
+        let raw = r#"{"id":"1","type":"terminal-exec-stream","cmd":"sh","args":["-c","echo start; sleep 5; echo end"],"cwd":null}"#;
+        let response = handle_request(&state, raw, &mut subscribed_topics, None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+        let session_id = parsed
+            .result
+            .as_ref()
+            .and_then(|v| v.get("session_id"))
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
+
+        // Wait for "start", then cancel.
+        for _ in 0..50 {
+            if let Ok(Ok(AutomationEvent::TerminalOutput(ev))) =
+                timeout(Duration::from_millis(200), receiver.recv()).await
+            {
+                if ev.session_id == session_id && ev.stream == "stdout" && ev.chunk.contains("start")
+                {
+                    break;
+                }
+            }
+        }
+
+        let cancel = format!(
+            r#"{{"id":"2","type":"terminal-cancel","session_id":"{}"}}"#,
+            session_id
+        );
+        let cancel_resp = handle_request(&state, &cancel, &mut subscribed_topics, None, None)
+            .await
+            .expect("cancel response");
+        let cancel_parsed: AutomationResponse<serde_json::Value> =
+            serde_json::from_str(&cancel_resp).unwrap();
+        assert!(cancel_parsed.ok);
+
+        // Ensure we eventually see the done event.
+        let mut done = false;
+        for _ in 0..80 {
+            if let Ok(Ok(AutomationEvent::TerminalOutput(ev))) =
+                timeout(Duration::from_millis(200), receiver.recv()).await
+            {
+                if ev.session_id == session_id && ev.done {
+                    done = true;
+                    break;
+                }
+            }
+        }
+        assert!(done, "expected done after cancel");
+    }
+
+    #[tokio::test]
+    async fn cache_body_returns_base64_bytes_when_present() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                expose_cache_api: true,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::CacheRead, PermissionDecision::Allow);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        // Create a minimal cache entry on disk.
+        let profile_id = "default".to_string();
+        let cache_root = paths.cache_dir.join(&profile_id);
+        let blobs_dir = cache_root.join("blobs");
+        std::fs::create_dir_all(&blobs_dir).unwrap();
+        let body_key = "blob1";
+        let payload = b"hello-cache";
+        std::fs::write(blobs_dir.join(body_key), payload).unwrap();
+        let entry = crate::cache::AssetMetadata {
+            asset_id: "asset1".to_string(),
+            url: "https://example.com/asset".to_string(),
+            mime: "text/plain".to_string(),
+            size_bytes: payload.len() as u64,
+            body_key: Some(body_key.to_string()),
+            profile_id: profile_id.clone(),
+            created_at: Utc::now().to_rfc3339(),
+            ..crate::cache::AssetMetadata::default()
+        };
+        let index_path = cache_root.join("index.jsonl");
+        std::fs::write(&index_path, format!("{}\n", serde_json::to_string(&entry).unwrap()))
+            .unwrap();
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let response = handle_request(
+            &state,
+            r#"{"id":"1","type":"cache-body","asset_id":"asset1"}"#,
+            &mut Vec::new(),
+            None,
+            None,
+        )
+        .await
+        .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+        let b64 = parsed
+            .result
+            .as_ref()
+            .and_then(|v| v.get("body_base64"))
+            .and_then(|v| v.as_str())
+            .unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .expect("decode b64");
+        assert_eq!(bytes, payload);
     }
 }

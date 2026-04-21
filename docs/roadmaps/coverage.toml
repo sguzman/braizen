@@ -50,8 +50,8 @@ id = "automation-and-external-apis.md:15:e1160a25b8"
 file = "automation-and-external-apis.md"
 line = 15
 text = "DOM query API"
-status = "planned"
-tests = []
+status = "done"
+tests = ["e2e_automation::e2e_boot_connect_logs_and_shutdown"]
 planned_tests = ["todo::e1160a25b8"]
 
 [[item]]
@@ -77,8 +77,8 @@ id = "automation-and-external-apis.md:18:15808eba86"
 file = "automation-and-external-apis.md"
 line = 18
 text = "Cached asset body retrieval API"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::cache_body_returns_base64_bytes_when_present"]
 planned_tests = ["todo::15808eba86"]
 
 [[item]]
@@ -104,8 +104,8 @@ id = "automation-and-external-apis.md:21:2cfe01a4f5"
 file = "automation-and-external-apis.md"
 line = 21
 text = "Tab / Window screenshot API (Base64/Raw)"
-status = "planned"
-tests = []
+status = "done"
+tests = ["e2e_automation::e2e_boot_connect_logs_and_shutdown"]
 planned_tests = ["todo::2cfe01a4f5"]
 
 [[item]]
