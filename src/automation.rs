@@ -2019,4 +2019,240 @@ mod tests {
         let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
         assert!(parsed.ok);
     }
+
+    #[tokio::test]
+    async fn tab_list_and_tab_new_are_ok_when_enabled() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                expose_tab_api: true,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::TabInspect, PermissionDecision::Allow);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let response = handle_request(&state, r#"{"id":"1","type":"tab-list"}"#, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+
+        let response = handle_request(&state, r#"{"id":"2","type":"tab-new","url":"about:blank"}"#, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+    }
+
+    #[tokio::test]
+    async fn mount_list_and_add_are_ok_when_enabled() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::VirtualResourceMount, PermissionDecision::Ask);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let response = handle_request(&state, r#"{"id":"1","type":"mount-list"}"#, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+
+        let response = handle_request(
+            &state,
+            &serde_json::json!({
+                "id": "2",
+                "type": "mount-add",
+                "name": "m",
+                "local_path": "/tmp",
+                "read_only": true,
+                "allowed_domains": ["example.com"]
+            })
+            .to_string(),
+            &mut Vec::new(),
+            None,
+            None,
+        )
+        .await
+        .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+    }
+
+    #[tokio::test]
+    async fn subscribe_is_ok_and_enforces_subscription_limit() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                max_subscriptions: 1,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let ok = serde_json::json!({
+            "id": "1",
+            "type": "subscribe",
+            "topics": ["navigation"]
+        })
+        .to_string();
+        let response = handle_request(&state, &ok, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+
+        let too_many = serde_json::json!({
+            "id": "2",
+            "type": "subscribe",
+            "topics": ["navigation", "capability"]
+        })
+        .to_string();
+        let response = handle_request(&state, &too_many, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(!parsed.ok);
+    }
+
+    #[tokio::test]
+    async fn cache_stats_is_ok_when_enabled() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                expose_cache_api: true,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::CacheRead, PermissionDecision::Allow);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let response =
+            handle_request(&state, r#"{"id":"1","type":"cache-stats"}"#, &mut Vec::new(), None, None)
+                .await
+                .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+    }
 }

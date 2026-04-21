@@ -5,8 +5,8 @@ id = "automation-and-external-apis.md:7:a185b9b55c"
 file = "automation-and-external-apis.md"
 line = 7
 text = "Automation endpoint config exists"
-status = "planned"
-tests = []
+status = "done"
+tests = ["bootstrap::default_config_contains_capability_sections"]
 planned_tests = ["todo::a185b9b55c"]
 
 [[item]]
@@ -14,8 +14,8 @@ id = "automation-and-external-apis.md:8:e95a071615"
 file = "automation-and-external-apis.md"
 line = 8
 text = "Tab and cache exposure flags exist in config"
-status = "planned"
-tests = []
+status = "done"
+tests = ["bootstrap::default_config_contains_capability_sections"]
 planned_tests = ["todo::e95a071615"]
 
 [[item]]
@@ -23,8 +23,8 @@ id = "automation-and-external-apis.md:9:1fec9f7894"
 file = "automation-and-external-apis.md"
 line = 9
 text = "Live automation server exists"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::log_subscribe_is_ok"]
 planned_tests = ["todo::1fec9f7894"]
 
 [[item]]
@@ -32,8 +32,8 @@ id = "automation-and-external-apis.md:13:359bb44e3d"
 file = "automation-and-external-apis.md"
 line = 13
 text = "Tab enumeration API"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::tab_list_and_tab_new_are_ok_when_enabled"]
 planned_tests = ["todo::359bb44e3d"]
 
 [[item]]
@@ -41,8 +41,8 @@ id = "automation-and-external-apis.md:14:0460e8defc"
 file = "automation-and-external-apis.md"
 line = 14
 text = "Tab manipulation API"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::tab_list_and_tab_new_are_ok_when_enabled"]
 planned_tests = ["todo::0460e8defc"]
 
 [[item]]
@@ -68,8 +68,8 @@ id = "automation-and-external-apis.md:17:7c7eadb241"
 file = "automation-and-external-apis.md"
 line = 17
 text = "Cache metadata query API"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::cache_stats_is_ok_when_enabled"]
 planned_tests = ["todo::7c7eadb241"]
 
 [[item]]
@@ -86,8 +86,8 @@ id = "automation-and-external-apis.md:19:e17f24b8c7"
 file = "automation-and-external-apis.md"
 line = 19
 text = "Event subscription API for navigation and capability activity"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::subscribe_is_ok_and_enforces_subscription_limit"]
 planned_tests = ["todo::e17f24b8c7"]
 
 [[item]]
@@ -113,8 +113,8 @@ id = "automation-and-external-apis.md:22:94dced34f2"
 file = "automation-and-external-apis.md"
 line = 22
 text = "Virtual Resource Mount control API"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::mount_list_and_add_are_ok_when_enabled"]
 planned_tests = ["todo::94dced34f2"]
 
 [[item]]
@@ -122,8 +122,8 @@ id = "automation-and-external-apis.md:23:e7a3f8b7c6"
 file = "automation-and-external-apis.md"
 line = 23
 text = "Log-stream access API for remote/CLI introspection"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::log_subscribe_is_ok"]
 planned_tests = ["todo::e7a3f8b7c6"]
 
 [[item]]

@@ -4,23 +4,23 @@ Tracks local sockets, WebSocket APIs, subscriptions, and browser-state access fo
 
 ## Current State
 
-- [ ] Automation endpoint config exists
-- [ ] Tab and cache exposure flags exist in config
-- [ ] Live automation server exists
+- [x] Automation endpoint config exists
+- [x] Tab and cache exposure flags exist in config
+- [x] Live automation server exists
 
 ## API Surface
 
-- [ ] Tab enumeration API
-- [ ] Tab manipulation API
+- [x] Tab enumeration API
+- [x] Tab manipulation API
 - [ ] DOM query API
 - [ ] Rendered-text / article-text API
-- [ ] Cache metadata query API
+- [x] Cache metadata query API
 - [ ] Cached asset body retrieval API
-- [ ] Event subscription API for navigation and capability activity
+- [x] Event subscription API for navigation and capability activity
 - [ ] TTS and reading-queue control API
 - [ ] Tab / Window screenshot API (Base64/Raw)
-- [ ] Virtual Resource Mount control API
-- [ ] Log-stream access API for remote/CLI introspection
+- [x] Virtual Resource Mount control API
+- [x] Log-stream access API for remote/CLI introspection
 
 ## Transport And Trust
 
