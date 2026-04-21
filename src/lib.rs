@@ -25,6 +25,7 @@ pub mod virtual_router;
 pub mod tls;
 pub mod audit_log;
 pub mod mcp;
+pub mod mcp_stdio;
 
 use std::path::{Path, PathBuf};
 

@@ -631,6 +631,23 @@ impl BrazenApp {
 
         let profile_db = ProfileDb::open(shell_state.runtime_paths.active_profile_dir.join("state.sqlite")).ok();
 
+        // Register external MCP servers from config
+        for (name, srv_config) in &config.mcp.servers {
+            match crate::mcp_stdio::StdioMcpServer::spawn(
+                name.clone(),
+                srv_config.command.clone(),
+                srv_config.args.clone(),
+                srv_config.env.clone(),
+            ) {
+                Ok(server) => {
+                    crate::mcp::McpBroker::register_server(Box::new(server));
+                }
+                Err(e) => {
+                    tracing::error!("Failed to spawn MCP server {}: {}", name, e);
+                }
+            }
+        }
+
         Self {
             config,
             shell_state,
@@ -2610,7 +2627,7 @@ impl BrazenApp {
                                 ui.horizontal(|ui| {
                                     ui.label(&entity.label);
                                     if ui.button("📋").on_hover_text("Copy to clipboard").clicked() {
-                                        ui.output_mut(|o| o.copied_text = entity.value.clone());
+                                        ui.ctx().copy_text(entity.value.clone());
                                     }
                                 });
                             }

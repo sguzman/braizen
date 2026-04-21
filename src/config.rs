@@ -24,6 +24,7 @@ pub struct BrazenConfig {
     pub extraction: ExtractionConfig,
     pub media: MediaConfig,
     pub features: FeatureFlags,
+    pub mcp: McpConfig,
 }
 
 impl BrazenConfig {
@@ -750,4 +751,17 @@ impl Default for FeatureFlags {
             servo_backend: cfg!(feature = "servo"),
         }
     }
+}
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct McpConfig {
+    pub servers: std::collections::HashMap<String, ExternalMcpServerConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalMcpServerConfig {
+    pub command: String,
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
 }
