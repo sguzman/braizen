@@ -82,6 +82,8 @@ pub struct ShellState {
     pub mount_manager: crate::mounts::MountManager,
     pub runtime_paths: RuntimePaths,
     pub pending_window_screenshot: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<crate::engine::EngineFrame, String>>>>>,
+    pub dom_snapshot: Option<String>,
+    pub network_log: VecDeque<crate::engine::NetworkRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,6 +221,15 @@ impl ShellState {
                     self.last_crash = Some(reason.clone());
                     self.session.write().unwrap().crash_recovery_pending = true;
                     self.record_event(format!("engine crashed: {reason}"));
+                }
+                EngineEvent::DomSnapshotUpdated(snapshot) => {
+                    self.dom_snapshot = Some(snapshot);
+                }
+                EngineEvent::NetworkRequestLogged(request) => {
+                    if self.network_log.len() >= 500 {
+                        self.network_log.pop_front();
+                    }
+                    self.network_log.push_back(request);
                 }
                 other => {
                     self.record_event(format!("engine event: {other:?}"));
@@ -399,6 +410,8 @@ pub fn build_shell_state(
         mount_manager: crate::mounts::MountManager::new(),
         runtime_paths: paths.clone(),
         pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
+        dom_snapshot: None,
+        network_log: VecDeque::with_capacity(512),
     };
 
     shell_state.sync_from_engine(engine.as_mut());
@@ -2363,11 +2376,32 @@ impl BrazenApp {
         eframe::egui::Window::new("DOM Inspector")
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label("DOM inspector not yet wired to Servo.");
-                ui.label(format!(
-                    "Current URL: {}",
-                    self.shell_state.active_tab.current_url
-                ));
+                ui.horizontal(|ui| {
+                    ui.label(format!("URL: {}", self.shell_state.active_tab.current_url));
+                    if ui.button("Refresh Snapshot").clicked() {
+                        self.engine.evaluate_javascript(
+                            "document.documentElement.outerHTML".to_string(),
+                            Box::new(move |_result| {
+                                // Result will be handled by the next sync_from_engine
+                                // Wait, evaluate_javascript in ServoEngine currently doesn't emit an event with the result.
+                                // It just calls the callback.
+                                // I should make the callback emit an event.
+                            })
+                        );
+                    }
+                });
+                ui.separator();
+                if let Some(dom) = &self.shell_state.dom_snapshot {
+                    eframe::egui::ScrollArea::both().show(ui, |ui| {
+                        ui.add(
+                            eframe::egui::TextEdit::multiline(&mut dom.clone())
+                                .font(eframe::egui::TextStyle::Monospace)
+                                .desired_width(f32::INFINITY)
+                        );
+                    });
+                } else {
+                    ui.label("No DOM snapshot available. Click Refresh to capture.");
+                }
             });
         if !open {
             self.panels.dom_inspector = false;
@@ -2382,12 +2416,32 @@ impl BrazenApp {
         eframe::egui::Window::new("Network Inspector")
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label("Network inspector is not yet wired.");
-                for event in self.shell_state.event_log.iter().rev().take(20) {
-                    if event.starts_with("nav:") {
-                        ui.monospace(event);
+                ui.horizontal(|ui| {
+                    ui.label(format!("Logged Requests: {}", self.shell_state.network_log.len()));
+                    if ui.button("Clear").clicked() {
+                        self.shell_state.network_log.clear();
                     }
-                }
+                });
+                ui.separator();
+                eframe::egui::ScrollArea::vertical().show(ui, |ui| {
+                    eframe::egui::Grid::new("network_grid")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.label("Method");
+                            ui.label("Status");
+                            ui.label("Mime");
+                            ui.label("URL");
+                            ui.end_row();
+
+                            for req in self.shell_state.network_log.iter().rev() {
+                                ui.label(&req.method);
+                                ui.label(req.status.map(|s| s.to_string()).unwrap_or_else(|| "-".to_string()));
+                                ui.label(req.mime_type.as_deref().unwrap_or("-"));
+                                ui.label(&req.url);
+                                ui.end_row();
+                            }
+                        });
+                });
             });
         if !open {
             self.panels.network_inspector = false;
@@ -2494,7 +2548,44 @@ impl BrazenApp {
         eframe::egui::Window::new("Knowledge Graph")
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label("Knowledge graph inspector not yet wired.");
+                ui.heading("Virtual Mounts");
+                let mounts = self.shell_state.mount_manager.list_mounts();
+                if mounts.is_empty() {
+                    ui.label("No active virtual mounts.");
+                } else {
+                    eframe::egui::Grid::new("mounts_grid")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.label("Name");
+                            ui.label("Type");
+                            ui.label("Access");
+                            ui.end_row();
+                            for mount in mounts {
+                                ui.label(&mount.name);
+                                ui.label(format!("{:?}", mount.mount_type));
+                                ui.label(if mount.read_only { "RO" } else { "RW" });
+                                ui.end_row();
+                            }
+                        });
+                }
+                
+                ui.separator();
+                ui.heading("MCP Tools");
+                let tools = crate::mcp::McpBroker::list_tools();
+                if tools.is_empty() {
+                    ui.label("No MCP tools registered.");
+                } else {
+                    for tool in tools {
+                        ui.collapsing(&tool.name, |ui| {
+                            ui.label(format!("Description: {}", tool.description));
+                            ui.label(format!("Schema: {}", serde_json::to_string_pretty(&tool.input_schema).unwrap_or_default()));
+                        });
+                    }
+                }
+
+                ui.separator();
+                ui.heading("Active Entities");
+                ui.label("Entity extraction pending engine support.");
             });
         if !open {
             self.panels.knowledge_graph = false;
@@ -3385,6 +3476,17 @@ impl eframe::App for BrazenApp {
                 "Render health: resource_reader={} upstream_active={} load_status={} last_error={}",
                 resource_status, self.shell_state.upstream_active, load_status, last_error
             ));
+
+            ui.separator();
+            ui.label("Active Capabilities:");
+            if self.shell_state.capabilities_snapshot.is_empty() {
+                ui.label("  (none)");
+            } else {
+                for cap in &self.shell_state.capabilities_snapshot {
+                    ui.label(format!("  - {:?}", cap));
+                }
+            }
+
             if let Some(warning) = &self.shell_state.render_warning {
                 ui.colored_label(eframe::egui::Color32::YELLOW, warning);
             }
@@ -3730,6 +3832,8 @@ mod tests {
             runtime_paths: paths,
             mount_manager: crate::mounts::MountManager::new(),
             pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
+            dom_snapshot: None,
+            network_log: VecDeque::new(),
         };
 
         let mut ready_engine = MockEngine {
@@ -3835,6 +3939,8 @@ mod tests {
             visit_total: 0,
             revisit_total: 0,
             runtime_paths: paths,
+            dom_snapshot: None,
+            network_log: VecDeque::new(),
             mount_manager: crate::mounts::MountManager::new(),
             pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
         };

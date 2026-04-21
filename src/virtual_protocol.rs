@@ -256,10 +256,10 @@ fn handle_mcp(
     origin: Option<&str>,
     permissions: &PermissionPolicy,
 ) -> Option<VirtualResponse> {
-    // Placeholder: expose tool schemas + calls later (Phase 3).
     if decision_for_origin(permissions, origin, Capability::AiToolUse) != PermissionDecision::Allow {
         return None;
     }
+    
     let mut headers = BTreeMap::new();
     headers.insert(
         http::header::CONTENT_TYPE.to_string(),
@@ -268,12 +268,40 @@ fn handle_mcp(
     if let Some(origin) = origin {
         allow_origin(&mut headers, origin);
     }
-    let body = serde_json::to_vec(&serde_json::json!({
-        "ok": false,
-        "error": "mcp not implemented",
-        "path": url.path()
-    }))
-    .ok()?;
+
+    let body = match url.path() {
+        "/list" => {
+            let tools = crate::mcp::McpBroker::list_tools();
+            serde_json::to_vec(&tools).ok()?
+        }
+        "/call" => {
+            let mut tool_name = String::new();
+            let mut tool_args = serde_json::Value::Null;
+            for (k, v) in url.query_pairs() {
+                if k == "name" {
+                    tool_name = v.into_owned();
+                } else if k == "args" {
+                    tool_args = serde_json::from_str(&v).unwrap_or(serde_json::Value::Null);
+                }
+            }
+            if tool_name.is_empty() {
+                serde_json::to_vec(&serde_json::json!({"error": "tool name missing"})).ok()?
+            } else {
+                match crate::mcp::McpBroker::call_tool(&tool_name, tool_args) {
+                    Ok(res) => serde_json::to_vec(&res).ok()?,
+                    Err(e) => serde_json::to_vec(&serde_json::json!({"error": e})).ok()?,
+                }
+            }
+        }
+        _ => {
+            serde_json::to_vec(&serde_json::json!({
+                "error": "unknown mcp path",
+                "path": url.path()
+            }))
+            .ok()?
+        }
+    };
+    
     Some(VirtualResponse { headers, body })
 }
 

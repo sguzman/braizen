@@ -92,6 +92,7 @@ pub struct BrazenWebViewDelegate {
     snapshot: Rc<RefCell<UpstreamSnapshot>>,
     frame_ready: Arc<AtomicBool>,
     virtual_router: crate::virtual_router::VirtualRouter,
+    event_sender: std::sync::mpsc::Sender<EngineEvent>,
 }
 
 impl BrazenWebViewDelegate {
@@ -99,11 +100,13 @@ impl BrazenWebViewDelegate {
         snapshot: Rc<RefCell<UpstreamSnapshot>>,
         frame_ready: Arc<AtomicBool>,
         virtual_router: crate::virtual_router::VirtualRouter,
+        event_sender: std::sync::mpsc::Sender<EngineEvent>,
     ) -> Self {
         Self {
             snapshot,
             frame_ready,
             virtual_router,
+            event_sender,
         }
     }
 }
@@ -176,6 +179,20 @@ impl WebViewDelegate for BrazenWebViewDelegate {
 
     fn load_web_resource(&self, _webview: WebView, load: WebResourceLoad) {
         let url = load.request.url.clone();
+        
+        // Log the request
+        let request = crate::engine::NetworkRequest {
+            id: format!("req-{}", Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+            url: url.to_string(),
+            method: "GET".to_string(), // Servo mostly does GET for resources
+            status: None,
+            mime_type: None,
+            size_bytes: None,
+            timestamp: Utc::now().to_rfc3339(),
+            initiator: "servo".to_string(),
+        };
+        let _ = self.event_sender.send(EngineEvent::NetworkRequestLogged(request));
+
         if let Some(response) = self.virtual_router.handle(&url, &load.request.headers) {
             tracing::info!(target: "brazen::virtual", url = %url, "intercepting virtual protocol request");
             let mut headers = HeaderMap::new();
@@ -296,6 +313,7 @@ pub struct ServoUpstreamRuntime {
     resources_dir: PathBuf,
     resource_source: ResourceDirSource,
     pending_clipboard_request: Arc<std::sync::Mutex<Option<StringRequest>>>,
+    event_sender: std::sync::mpsc::Sender<EngineEvent>,
 }
 
 impl std::fmt::Debug for ServoUpstreamRuntime {
@@ -380,6 +398,7 @@ impl ServoUpstreamRuntime {
             snapshot.clone(),
             frame_ready.clone(),
             virtual_router,
+            event_sender.clone(),
         ));
         let servo_delegate = Rc::new(BrazenServoDelegate::new(
             devtools_endpoint.clone(),
@@ -435,6 +454,7 @@ impl ServoUpstreamRuntime {
             resources_dir: path,
             resource_source: source,
             pending_clipboard_request,
+            event_sender,
         })
     }
 
@@ -703,12 +723,24 @@ impl ServoUpstreamRuntime {
         callback: Box<dyn FnOnce(Result<serde_json::Value, String>) + Send + 'static>,
     ) {
         let webview_id = self.webview.id();
+        let event_sender = self.event_sender.clone();
+        let is_dom_request = script.contains("documentElement.outerHTML");
+        
         self.servo.javascript_evaluator_mut().evaluate(
             webview_id,
             script,
-            Box::new(move |result| match result {
-                Ok(val) => callback(Ok(js_value_to_json(val))),
-                Err(err) => callback(Err(format!("{:?}", err))),
+            Box::new(move |result| {
+                let res = match result {
+                    Ok(val) => {
+                        let json = js_value_to_json(val);
+                        if is_dom_request && let serde_json::Value::String(html) = &json {
+                            let _ = event_sender.send(EngineEvent::DomSnapshotUpdated(html.clone()));
+                        }
+                        Ok(json)
+                    }
+                    Err(err) => Err(format!("{:?}", err)),
+                };
+                callback(res);
             }),
         );
     }

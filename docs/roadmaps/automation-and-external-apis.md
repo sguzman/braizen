@@ -32,9 +32,9 @@ Tracks local sockets, WebSocket APIs, subscriptions, and browser-state access fo
 
 ## Developer Experience
 
-- [ ] Stable schema for request/response payloads
-- [ ] Example CLI and scripting workflows
-- [ ] API docs and local-debug tooling
+- [x] Stable schema for request/response payloads
+- [x] Example CLI and scripting workflows
+- [x] API docs and local-debug tooling
 - [x] CLI Introspection Suite (`brazen introspect ...`)
       - [x] `list-windows`: Show all running window IDs and titles
       - [x] `list-tabs`: Show tabs grouped by window

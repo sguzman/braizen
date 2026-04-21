@@ -1,5 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
+use serde::{Serialize, Deserialize};
 
 use crate::config::BrazenConfig;
 use crate::platform_paths::RuntimePaths;
@@ -100,6 +101,18 @@ pub enum SecurityWarningKind {
 pub struct RenderSurfaceHandle {
     pub id: u64,
     pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NetworkRequest {
+    pub id: String,
+    pub url: String,
+    pub method: String,
+    pub status: Option<u16>,
+    pub mime_type: Option<String>,
+    pub size_bytes: Option<u64>,
+    pub timestamp: String,
+    pub initiator: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,6 +324,8 @@ pub enum EngineEvent {
     Crashed {
         reason: String,
     },
+    DomSnapshotUpdated(String),
+    NetworkRequestLogged(NetworkRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

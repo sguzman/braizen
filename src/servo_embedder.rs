@@ -15,6 +15,7 @@ use crate::servo_runtime::{
 use crate::servo_upstream::{ServoUpstreamConfig, ServoUpstreamRuntime, UpstreamSnapshot};
 #[cfg(feature = "servo-upstream")]
 use libservo::CompositionState;
+use crate::permissions::Capability;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServoProcessModel {
@@ -389,6 +390,11 @@ impl ServoEmbedder {
         if self.verbose_logging {
             tracing::trace!(target: "brazen::servo", "tick");
         }
+        #[cfg(feature = "servo-upstream")]
+        if self.upstream.is_none() && self.pending_navigation.is_some() && self.surface.is_some() {
+            tracing::info!(target: "brazen::servo", "flushing pending navigation queue");
+            self.ensure_upstream();
+        }
     }
 
     pub fn render_frame(&mut self) -> Option<EngineFrame> {
@@ -449,6 +455,9 @@ impl ServoEmbedder {
             }
         } else {
             self.pending_navigation = Some(url.to_string());
+            if self.surface.is_some() {
+                self.ensure_upstream();
+            }
         }
     }
 
@@ -634,9 +643,21 @@ impl ServoEmbedder {
         _script: String,
         callback: Box<dyn FnOnce(Result<serde_json::Value, String>) + Send + 'static>,
     ) {
+        // Security Audit: Verify that DOM inspection is gated by DomRead capability.
+        let url_str = &self.browser_state.last_committed_url;
+        let domain = url::Url::parse(url_str)
+            .ok()
+            .and_then(|u| u.host_str().map(|s| s.to_string()))
+            .unwrap_or_default();
+        
+        if !self.permissions.is_allowed_for_domain(&domain, &Capability::DomRead) {
+            callback(Err(format!("Permission denied: 'dom-read' capability required for JS evaluation on {}", domain)));
+            return;
+        }
+
         #[cfg(feature = "servo-upstream")]
         if let Some(upstream) = &mut self.upstream {
-            upstream.evaluate_javascript(_script, callback);
+            upstream.evaluate_javascript(script, callback);
             return;
         }
         callback(Err("Embedder has no active upstream".to_string()));

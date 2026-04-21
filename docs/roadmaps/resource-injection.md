@@ -6,8 +6,8 @@ browser-resident AI agents.
 
 ## Current State
 
-- [ ] Internal resource resolution logic exists for Servo-specific assets
-- [ ] No virtual mount point (e.g., `brazen://`) is implemented
+- [x] Internal resource resolution logic exists for Servo-specific assets
+- [x] No virtual mount point (e.g., `brazen://`) is implemented
 - [ ] No bridging between Local Connectors and Engine Protocol Handlers
 
 ## Protocol & Mounting
@@ -24,7 +24,7 @@ browser-resident AI agents.
 
 - [x] Origin-specific mounting (only allow `chatgpt.com` to see certain mounts)
 - [x] Read-only vs Read-Write mount modes
-- [x] Streaming support for large files or terminal output
+- [ ] Streaming support for large files or terminal output
 - [x] Content-type sniffing for local resources mapped to web types
 - [ ] Support for injecting resources into the DOM via virtual script tags or state objects
 

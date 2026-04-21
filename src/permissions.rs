@@ -131,4 +131,12 @@ impl PermissionPolicy {
         }
         self.decision_for(capability)
     }
+
+    pub fn is_allowed(&self, capability: &Capability) -> bool {
+        self.decision_for(capability) == PermissionDecision::Allow
+    }
+
+    pub fn is_allowed_for_domain(&self, domain: &str, capability: &Capability) -> bool {
+        self.decision_for_domain(domain, capability) == PermissionDecision::Allow
+    }
 }

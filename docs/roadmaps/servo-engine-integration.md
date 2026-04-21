@@ -4,13 +4,13 @@ Tracks the content-engine boundary, Servo embedding, render surfaces, and shell-
 
 ## Current State
 
-- [ ] `BrowserEngine` trait exists
-- [ ] Null backend exists for default builds
-- [ ] Feature-gated Servo scaffold backend exists
-- [ ] Engine status states include `NoEngine`, `Initializing`, `Ready`, and `Error`
-- [ ] Render-surface metadata is modeled
-- [ ] Engine seam includes input, IME, focus, and clipboard hooks
-- [ ] Navigation-state events and back/forward hooks are modeled
+- [x] `BrowserEngine` trait exists
+- [x] Null backend exists for default builds
+- [x] Feature-gated Servo scaffold backend exists
+- [x] Engine status states include `NoEngine`, `Initializing`, `Ready`, and `Error`
+- [x] Render-surface metadata is modeled
+- [x] Engine seam includes input, IME, focus, and clipboard hooks
+- [x] Navigation-state events and back/forward hooks are modeled
 
 ## Embedding Foundation
 
