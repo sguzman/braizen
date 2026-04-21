@@ -967,6 +967,7 @@ mod tests {
             crash_dumps_dir: dir.path().join("crash"),
             active_profile_dir: dir.path().join("profiles/default"),
             session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
         };
         let mut store = AssetStore::load(config, &paths, "default".to_string());
         let headers = BTreeMap::new();
@@ -1028,6 +1029,7 @@ mod tests {
             crash_dumps_dir: dir.path().join("crash"),
             active_profile_dir: dir.path().join("profiles/default"),
             session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
         };
         let store = AssetStore::load(config, &paths, "default".to_string());
 
@@ -1054,6 +1056,7 @@ mod tests {
             crash_dumps_dir: dir.path().join("crash"),
             active_profile_dir: dir.path().join("profiles/default"),
             session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
         };
         let mut store = AssetStore::load(config, &paths, "default".to_string());
         let headers = BTreeMap::new();

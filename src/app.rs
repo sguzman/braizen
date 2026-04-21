@@ -3278,6 +3278,7 @@ mod tests {
             crash_dumps_dir: "crash-dumps".into(),
             active_profile_dir: "profiles/default".into(),
             session_path: "profiles/default/session.json".into(),
+            audit_log_path: "logs/audit.jsonl".into(),
         }
     }
 
@@ -3382,7 +3383,7 @@ mod tests {
             callback(Ok(serde_json::Value::Null));
         }
 
-        fn take_screenshot(&mut self) -> Result<Vec<u8>, String> {
+        fn take_screenshot(&mut self) -> Result<EngineFrame, String> {
             Err("MockEngine does not support screenshots".to_string())
         }
     }
@@ -3429,7 +3430,10 @@ mod tests {
             upstream_active: false,
             upstream_last_error: None,
             render_warning: None,
-            session: SessionSnapshot::new("default".to_string(), "now".to_string()),
+            session: Arc::new(RwLock::new(SessionSnapshot::new(
+                "default".to_string(),
+                "now".to_string(),
+            ))),
             event_log: Vec::new(),
             log_panel_open: true,
             permission_panel_open: false,
@@ -3437,7 +3441,8 @@ mod tests {
             find_query: String::new(),
             capabilities_snapshot: Vec::new(),
             automation_activities: Vec::new(),
-            runtime_paths: paths, mount_manager: crate::mounts::MountManager::new(),
+            runtime_paths: paths,
+            mount_manager: crate::mounts::MountManager::new(),
         };
 
         let mut ready_engine = MockEngine {
@@ -3522,7 +3527,10 @@ mod tests {
             upstream_active: false,
             upstream_last_error: None,
             render_warning: None,
-            session: SessionSnapshot::new("default".to_string(), "now".to_string()),
+            session: Arc::new(RwLock::new(SessionSnapshot::new(
+                "default".to_string(),
+                "now".to_string(),
+            ))),
             event_log: Vec::new(),
             log_panel_open: true,
             permission_panel_open: false,
@@ -3530,7 +3538,8 @@ mod tests {
             find_query: String::new(),
             capabilities_snapshot: Vec::new(),
             automation_activities: Vec::new(),
-            runtime_paths: paths, mount_manager: crate::mounts::MountManager::new(),
+            runtime_paths: paths,
+            mount_manager: crate::mounts::MountManager::new(),
         };
 
         let mut engine = MockEngine {

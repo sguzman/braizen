@@ -29,6 +29,7 @@ fn cache_cli_fetch_records_asset() {
         crash_dumps_dir: dir.path().join("crash"),
         active_profile_dir: dir.path().join("profiles/default"),
         session_path: dir.path().join("profiles/default/session.json"),
+        audit_log_path: dir.path().join("logs/audit.jsonl"),
     };
     let config = BrazenConfig::default();
 

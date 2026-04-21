@@ -29,6 +29,8 @@ pub enum IntrospectCommand {
     ListWindows,
     /// List all tabs in the active window
     ListTabs,
+    /// Get a full automation snapshot of the running instance
+    Snapshot,
     /// Get the DOM of the active tab
     GetDom {
         /// CSS selector to retrieve
@@ -52,6 +54,8 @@ pub enum IntrospectCommand {
         /// JavaScript code to execute
         script: String,
     },
+    /// Request the running instance to shut down
+    Shutdown,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,9 +71,11 @@ enum AutomationRequest {
     WindowList,
     LogSubscribe,
     TabList,
+    Snapshot,
     DomQuery { selector: String },
     Screenshot,
     EvaluateJavascript { script: String },
+    Shutdown,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -141,6 +147,22 @@ pub async fn run_introspect_cli(args: &[String]) -> Result<(), Box<dyn std::erro
                     }
                 } else {
                     eprintln!("Error: {}", response.error.unwrap_or_else(|| "Unknown error".to_string()));
+                }
+            }
+        }
+        IntrospectCommand::Snapshot => {
+            let request = AutomationEnvelope {
+                id: Some("cli-snapshot".to_string()),
+                payload: AutomationRequest::Snapshot,
+            };
+            write.send(Message::Text(serde_json::to_string(&request)?.into())).await?;
+
+            if let Some(Ok(Message::Text(text))) = read.next().await {
+                let response: AutomationResponse<serde_json::Value> = serde_json::from_str(&text)?;
+                if response.ok {
+                    println!("{}", serde_json::to_string_pretty(&response.result)?);
+                } else {
+                    eprintln!("Error: {}", response.error.unwrap_or_default());
                 }
             }
         }
@@ -221,6 +243,22 @@ pub async fn run_introspect_cli(args: &[String]) -> Result<(), Box<dyn std::erro
                     }
                 } else {
                     eprintln!("Error: {}", response.error.unwrap_or_else(|| "Unknown error".to_string()));
+                }
+            }
+        }
+        IntrospectCommand::Shutdown => {
+            let request = AutomationEnvelope {
+                id: Some("cli-shutdown".to_string()),
+                payload: AutomationRequest::Shutdown,
+            };
+            write.send(Message::Text(serde_json::to_string(&request)?.into())).await?;
+
+            if let Some(Ok(Message::Text(text))) = read.next().await {
+                let response: AutomationResponse<serde_json::Value> = serde_json::from_str(&text)?;
+                if response.ok {
+                    println!("Shutdown requested");
+                } else {
+                    eprintln!("Error: {}", response.error.unwrap_or_default());
                 }
             }
         }

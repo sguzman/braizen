@@ -18,7 +18,6 @@ use url::Url;
 use crate::audit_log::{AuditLogger, AuditEntry};
 use crate::cache::{AssetMetadata, AssetQuery, AssetStore, CacheStats};
 use crate::config::{AutomationConfig, BrazenConfig, CacheConfig};
-use crate::engine::EngineLoadStatus;
 use crate::permissions::{Capability, PermissionDecision, PermissionPolicy};
 use crate::platform_paths::RuntimePaths;
 use crate::session::SessionSnapshot;
@@ -27,14 +26,15 @@ use base64::Engine;
 use crate::engine::{EngineFrame, PixelFormat};
 use image::ImageFormat;
 use std::io::Cursor;
+use std::path::Path;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationSnapshot {
     pub tabs: Vec<AutomationTab>,
     pub active_tab_index: usize,
     pub active_tab_id: Option<String>,
     pub address_bar: String,
-    pub load_status: Option<EngineLoadStatus>,
+    pub load_status: Option<String>,
     pub load_progress: f32,
     pub engine_status: String,
     pub cache_stats: CacheStats,
@@ -141,6 +141,7 @@ pub enum AutomationRequest {
     WindowList,
     LogSubscribe,
     TabList,
+    Snapshot,
     TabActivate {
         index: Option<usize>,
         tab_id: Option<String>,
@@ -194,6 +195,7 @@ pub enum AutomationRequest {
     EvaluateJavascript {
         script: String,
     },
+    Shutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,6 +264,18 @@ impl AutomationHandle {
             ctx.request_repaint();
         }
     }
+
+    pub fn request_shutdown(&self) -> Result<(), String> {
+        let ctx = self
+            .egui_ctx
+            .read()
+            .expect("egui ctx lock")
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "egui context not available".to_string())?;
+        ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+        Ok(())
+    }
     pub fn snapshot(&self) -> AutomationSnapshot {
         self.snapshot.read().expect("automation snapshot lock").clone()
     }
@@ -283,7 +297,9 @@ impl AutomationHandle {
             .active_tab()
             .map(|tab| tab.id.0.to_string());
         snapshot.address_bar = shell_state.address_bar_input.clone();
-        snapshot.load_status = shell_state.load_status;
+        snapshot.load_status = shell_state
+            .load_status
+            .map(|status| status.as_str().to_string());
         snapshot.load_progress = shell_state.load_progress;
         snapshot.engine_status = shell_state.engine_status.to_string();
         snapshot.cache_stats = cache.stats();
@@ -443,6 +459,26 @@ fn run_automation_server(bind: &str, state: AutomationServerState) -> Result<(),
                 let listener = tokio::net::TcpListener::bind(addr)
                     .await
                     .map_err(|error| format!("automation bind failed: {error}"))?;
+                if let Ok(endpoint_file) = std::env::var("BRAZEN_AUTOMATION_ENDPOINT_FILE") {
+                    if !endpoint_file.trim().is_empty() {
+                        let local_addr = listener
+                            .local_addr()
+                            .map_err(|error| format!("automation local_addr failed: {error}"))?;
+                        let endpoint = format!(
+                            "ws://{}:{}{}",
+                            local_addr.ip(),
+                            local_addr.port(),
+                            path
+                        );
+                        let path = Path::new(&endpoint_file);
+                        if let Some(parent) = path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        std::fs::write(path, endpoint.as_bytes()).map_err(|error| {
+                            format!("failed to write automation endpoint file: {error}")
+                        })?;
+                    }
+                }
                 axum::serve(listener, router)
                     .await
                     .map_err(|error| format!("automation server error: {error}"))?;
@@ -684,6 +720,16 @@ async fn handle_request(
             };
             Some(serde_json::to_string(&response).unwrap())
         }
+        AutomationRequest::Snapshot => {
+            let snapshot = state.handle.snapshot();
+            let response = AutomationResponse {
+                id,
+                ok: true,
+                result: Some(snapshot),
+                error: None,
+            };
+            Some(serde_json::to_string(&response).unwrap())
+        }
         AutomationRequest::TabActivate { index, tab_id } => {
             if let Err(error) = ensure_tab_api(state) {
                 return Some(error_response(id, &error));
@@ -898,6 +944,13 @@ async fn handle_request(
                 }
                 Ok(Err(error)) => Some(error_response(id, &error)),
                 Err(_) => Some(error_response(id, "internal error")),
+            }
+        }
+        AutomationRequest::Shutdown => {
+            let result = state.handle.request_shutdown();
+            match result {
+                Ok(()) => Some(ok_response(id)),
+                Err(error) => Some(error_response(id, &error)),
             }
         }
         AutomationRequest::CacheStats => {

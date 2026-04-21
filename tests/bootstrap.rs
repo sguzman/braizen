@@ -15,6 +15,7 @@ impl EngineFactory for TestFactory {
         _config: &BrazenConfig,
         _paths: &brazen::RuntimePaths,
         _mount_manager: brazen::mounts::MountManager,
+        _session: std::sync::Arc<std::sync::RwLock<brazen::session::SessionSnapshot>>,
     ) -> Box<dyn BrowserEngine> {
         Box::new(NullEngine::new())
     }
@@ -194,6 +195,7 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         crash_dumps_dir: dir.path().join("crash-dumps"),
         active_profile_dir: dir.path().join("profiles/default"),
         session_path: dir.path().join("profiles/default/session.json"),
+        audit_log_path: dir.path().join("logs/audit.jsonl"),
     };
     let mut shell = brazen::ShellState {
         app_name: "Brazen".to_string(),
@@ -234,14 +236,18 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         upstream_active: false,
         upstream_last_error: None,
         render_warning: None,
-        session: brazen::session::SessionSnapshot::new("default".to_string(), "now".to_string()),
+        session: std::sync::Arc::new(std::sync::RwLock::new(
+            brazen::session::SessionSnapshot::new("default".to_string(), "now".to_string()),
+        )),
         event_log: Vec::new(),
         log_panel_open: true,
         permission_panel_open: false,
         find_panel_open: false,
         find_query: String::new(),
         capabilities_snapshot: Vec::new(),
-        runtime_paths, mount_manager: brazen::mounts::MountManager::new(),
+        automation_activities: Vec::new(),
+        mount_manager: brazen::mounts::MountManager::new(),
+        runtime_paths,
     };
     let mut engine = NullEngine::new();
 
@@ -282,6 +288,7 @@ fn command_dispatch_rejects_invalid_urls() {
         crash_dumps_dir: dir.path().join("crash-dumps"),
         active_profile_dir: dir.path().join("profiles/default"),
         session_path: dir.path().join("profiles/default/session.json"),
+        audit_log_path: dir.path().join("logs/audit.jsonl"),
     };
     let mut shell = brazen::ShellState {
         app_name: "Brazen".to_string(),
@@ -322,14 +329,18 @@ fn command_dispatch_rejects_invalid_urls() {
         upstream_active: false,
         upstream_last_error: None,
         render_warning: None,
-        session: brazen::session::SessionSnapshot::new("default".to_string(), "now".to_string()),
+        session: std::sync::Arc::new(std::sync::RwLock::new(
+            brazen::session::SessionSnapshot::new("default".to_string(), "now".to_string()),
+        )),
         event_log: Vec::new(),
         log_panel_open: true,
         permission_panel_open: false,
         find_panel_open: false,
         find_query: String::new(),
         capabilities_snapshot: Vec::new(),
-        runtime_paths, mount_manager: brazen::mounts::MountManager::new(),
+        automation_activities: Vec::new(),
+        mount_manager: brazen::mounts::MountManager::new(),
+        runtime_paths,
     };
     let mut engine = NullEngine::new();
 
