@@ -134,6 +134,8 @@ pub struct AutomationEnvelope<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum AutomationRequest {
+    WindowList,
+    LogSubscribe,
     TabList,
     TabActivate {
         index: Option<usize>,
@@ -373,20 +375,29 @@ struct AuthQuery {
 fn run_automation_server(bind: &str, state: AutomationServerState) -> Result<(), String> {
     let url = Url::parse(bind).map_err(|error| format!("automation.bind invalid: {error}"))?;
     let scheme = url.scheme().to_string();
-    let path = if url.path().is_empty() {
+    let path = if url.path().is_empty() || url.path() == "/" {
         "/ws"
     } else {
         url.path()
     };
     let host = url.host_str().unwrap_or("127.0.0.1").to_string();
     let port = url.port().unwrap_or(7942);
-    #[cfg(unix)]
-    let unix_socket_path = url
-        .to_file_path()
-        .map_err(|_| "ws+unix bind must be a file path".to_string())?;
     let router = Router::new()
         .route(path, get(ws_handler))
         .with_state(state.clone());
+
+    let unix_socket_path = if scheme == "ws+unix" {
+        #[cfg(unix)]
+        {
+            Some(url.to_file_path().map_err(|_| "ws+unix bind must be a file path".to_string())?)
+        }
+        #[cfg(not(unix))]
+        {
+            return Err("ws+unix is only supported on unix platforms".to_string());
+        }
+    } else {
+        None
+    };
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -417,7 +428,7 @@ fn run_automation_server(bind: &str, state: AutomationServerState) -> Result<(),
                 }
                 #[cfg(unix)]
                 {
-                    let socket_path = unix_socket_path;
+                    let socket_path = unix_socket_path.expect("unix_socket_path must be set for ws+unix");
                     if let Some(parent) = socket_path.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
@@ -494,6 +505,7 @@ async fn handle_socket(
     _permit: tokio::sync::OwnedSemaphorePermit,
 ) {
     let mut receiver = state.handle.event_tx.subscribe();
+    let mut log_receiver = crate::logging::get_log_receiver();
     let mut subscribed_topics: Vec<String> = Vec::new();
     let mut message_count = 0u32;
     let mut window_start = Instant::now();
@@ -510,6 +522,22 @@ async fn handle_socket(
                     if subscribed_topics.iter().any(|value| value == topic) {
                         let payload = serde_json::to_string(&AutomationEnvelope{ id: None, payload: event })
                             .unwrap_or_else(|_| "{\"type\":\"error\",\"error\":\"encode\"}".to_string());
+                        if socket.send(Message::Text(payload.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            log_msg = log_receiver.recv() => {
+                if let Ok(msg) = log_msg {
+                    if subscribed_topics.iter().any(|value| value == "logs") {
+                        let payload = serde_json::to_string(&AutomationEnvelope{ 
+                            id: None, 
+                            payload: serde_json::json!({
+                                "type": "log-entry",
+                                "message": msg
+                            }) 
+                        }).unwrap_or_else(|_| "{\"type\":\"error\",\"error\":\"encode\"}".to_string());
                         if socket.send(Message::Text(payload.into())).await.is_err() {
                             break;
                         }
@@ -564,6 +592,8 @@ async fn handle_request(
         format!("auto-{}", count)
     });
 
+    tracing::info!(target: "brazen::automation", id, "handling automation request: {}", command_name);
+
     state.handle.record_activity(AutomationActivity {
         id: activity_id.clone(),
         command: command_name,
@@ -573,6 +603,30 @@ async fn handle_request(
     });
 
     let response = match envelope.payload {
+        AutomationRequest::WindowList => {
+            // Placeholder: Brazen core needs to expose windows in its state.
+            let response = AutomationResponse {
+                id,
+                ok: true,
+                result: Some(serde_json::json!({
+                    "active_window": 0,
+                    "window_count": 1
+                })),
+                error: None,
+            };
+            Some(serde_json::to_string(&response).unwrap())
+        }
+        AutomationRequest::LogSubscribe => {
+            if !subscribed_topics.iter().any(|t| t == "logs") {
+                subscribed_topics.push("logs".to_string());
+            }
+            Some(serde_json::to_string(&AutomationResponse::<serde_json::Value> {
+                id,
+                ok: true,
+                result: Some(serde_json::json!({"status": "subscribed"})),
+                error: None,
+            }).unwrap())
+        }
         AutomationRequest::TabList => {
             if let Err(error) = ensure_tab_api(state) {
                 return Some(error_response(id, &error));

@@ -2,6 +2,7 @@ pub mod app;
 pub mod automation;
 pub mod cache;
 pub mod cli_cache;
+pub mod cli_introspect;
 pub mod commands;
 pub mod config;
 pub mod engine;

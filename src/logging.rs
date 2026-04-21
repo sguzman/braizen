@@ -13,6 +13,57 @@ use crate::config::LoggingConfig;
 static TRACING_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 static TRACING_READY: OnceLock<()> = OnceLock::new();
 
+static LOG_BROADCASTER: OnceLock<tokio::sync::broadcast::Sender<String>> = OnceLock::new();
+
+pub fn get_log_receiver() -> tokio::sync::broadcast::Receiver<String> {
+    LOG_BROADCASTER
+        .get_or_init(|| {
+            let (tx, _) = tokio::sync::broadcast::channel(1024);
+            tx
+        })
+        .subscribe()
+}
+
+struct BroadcastLayer;
+
+impl<S> Layer<S> for BroadcastLayer
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut buf = String::new();
+        let mut visitor = LogVisitor(&mut buf);
+        event.record(&mut visitor);
+
+        if let Some(tx) = LOG_BROADCASTER.get() {
+            let meta = event.metadata();
+            let log_line = format!(
+                "{} [{}] {}: {}",
+                Local::now().format("%H:%M:%S%.3f"),
+                meta.level(),
+                meta.target(),
+                buf
+            );
+            let _ = tx.send(log_line);
+        }
+    }
+}
+
+struct LogVisitor<'a>(&'a mut String);
+
+impl<'a> tracing::field::Visit for LogVisitor<'a> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            use std::fmt::Write;
+            let _ = write!(self.0, "{:?}", value);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggingPlan {
     pub console_filter: String,
@@ -91,7 +142,10 @@ pub fn init_tracing(config: &LoggingConfig, logs_dir: &Path) -> Result<(), Loggi
         .with_target(true)
         .with_filter(file_filter);
 
-    let subscriber = Registry::default().with(console_layer).with(file_layer);
+    let subscriber = Registry::default()
+        .with(console_layer)
+        .with(file_layer)
+        .with(BroadcastLayer);
     if tracing::subscriber::set_global_default(subscriber).is_err() {
         let _ = TRACING_READY.set(());
         return Ok(());

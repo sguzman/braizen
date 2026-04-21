@@ -1,0 +1,28 @@
+[app]
+name = "BrazenTest"
+tagline = "Introspection Verification"
+mode = "dev"
+
+[window]
+initial_width = 800.0
+initial_height = 600.0
+
+[automation]
+enabled = true
+bind = "ws://127.0.0.1:7942"
+require_auth = false
+expose_tab_api = true
+
+[features]
+automation_server = true
+shell_status_panel = true
+
+[permissions]
+default = "allow"
+
+[permissions.capabilities]
+terminal-exec = "allow"
+dom-read = "allow"
+cache-read = "allow"
+tab-inspect = "allow"
+ai-tool-use = "allow"
