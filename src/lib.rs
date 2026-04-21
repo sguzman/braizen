@@ -10,6 +10,7 @@ pub mod logging;
 pub mod navigation;
 pub mod permissions;
 pub mod platform_paths;
+pub mod profile_db;
 pub mod rendering;
 pub mod servo_embedder;
 pub mod servo_resources;

@@ -22,6 +22,7 @@ use crate::permissions::Capability;
 use crate::platform_paths::RuntimePaths;
 use crate::rendering::{normalize_pixels, probe_frame_stats};
 use crate::session::{NavigationEntry, SessionSnapshot, load_session, save_session};
+use crate::profile_db::ProfileDb;
 
 const INPUT_TEST_URL: &str = "data:text/html;charset=utf-8,<html><body%20style=\"font-family:sans-serif;background:%23f8f8f8;\"><h1>Input%20Test</h1><p>Click%20buttons,%20type%20in%20the%20field,%20and%20use%20right-click.</p><input%20placeholder=\"type%20here\"><button%20onclick=\"document.body.style.background='%23dff'\">Change%20Color</button></body></html>";
 
@@ -138,6 +139,14 @@ impl ShellState {
                         }
                         self.history.push(state.url.clone());
                         self.last_committed_url = Some(state.url.clone());
+                        if let Ok(db) = ProfileDb::open(self.runtime_paths.active_profile_dir.join("state.sqlite")) {
+                            let _ = db.append_history(&state.url, Some(&state.title), &Utc::now().to_rfc3339());
+                            let _ = db.save_tts_state(self.tts_playing, &self.tts_queue.iter().cloned().collect::<Vec<_>>());
+                            let _ = db.save_visit_stats(self.visit_total, self.revisit_total, &self.visit_counts);
+                            for item in self.reading_queue.iter() {
+                                let _ = db.upsert_reading_item(item);
+                            }
+                        }
                         let entry = NavigationEntry {
                             url: state.url.clone(),
                             title: state.title.clone(),
@@ -289,6 +298,26 @@ pub fn build_shell_state(
         .ok()
         .flatten();
 
+    let profile_db_path = paths.active_profile_dir.join("state.sqlite");
+    let profile_db = ProfileDb::open(&profile_db_path).ok();
+
+    let (tts_playing, tts_queue) = profile_db
+        .as_ref()
+        .and_then(|db| db.load_tts_state().ok())
+        .unwrap_or((false, Vec::new()));
+    let reading_queue = profile_db
+        .as_ref()
+        .and_then(|db| db.load_reading_queue(512).ok())
+        .unwrap_or_default();
+    let (visit_total, revisit_total, visit_counts) = profile_db
+        .as_ref()
+        .and_then(|db| db.load_visit_stats().ok())
+        .unwrap_or((0, 0, HashMap::new()));
+    let history = profile_db
+        .as_ref()
+        .and_then(|db| db.load_history(256).ok())
+        .unwrap_or_default();
+
     let mut shell_state = ShellState {
         app_name: config.app.name.clone(),
         backend_name: engine.backend_name().to_string(),
@@ -306,7 +335,7 @@ pub fn build_shell_state(
         load_status: None,
         favicon_url: None,
         metadata_summary: None,
-        history: Vec::new(),
+        history,
         last_committed_url: None,
         active_tab_zoom: {
             let s = session.read().unwrap();
@@ -358,15 +387,15 @@ pub fn build_shell_state(
         find_query: String::new(),
         capabilities_snapshot,
         automation_activities: Vec::new(),
-        tts_queue: VecDeque::new(),
-        tts_playing: false,
-        reading_queue: VecDeque::new(),
+        tts_queue: tts_queue.into(),
+        tts_playing,
+        reading_queue: reading_queue.into(),
         reader_mode_open: false,
         reader_mode_source_url: None,
         reader_mode_text: String::new(),
-        visit_counts: HashMap::new(),
-        visit_total: 0,
-        revisit_total: 0,
+        visit_counts,
+        visit_total,
+        revisit_total,
         mount_manager: crate::mounts::MountManager::new(),
         runtime_paths: paths.clone(),
         pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
@@ -443,6 +472,8 @@ pub struct BrazenApp {
     last_nav_event: Option<(String, Option<EngineLoadStatus>, f32)>,
     last_event_log_len: usize,
     pending_screenshot_tx: Option<tokio::sync::oneshot::Sender<Result<crate::engine::EngineFrame, String>>>,
+    profile_db: Option<ProfileDb>,
+    last_profile_persist_at: Instant,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -574,6 +605,8 @@ impl BrazenApp {
             .map(|runtime| (Some(runtime.handle), Some(runtime.command_rx)))
             .unwrap_or((None, None));
 
+        let profile_db = ProfileDb::open(shell_state.runtime_paths.active_profile_dir.join("state.sqlite")).ok();
+
         Self {
             config,
             shell_state,
@@ -637,6 +670,29 @@ impl BrazenApp {
             last_nav_event: None,
             last_event_log_len: 0,
             pending_screenshot_tx: None,
+            profile_db,
+            last_profile_persist_at: Instant::now(),
+        }
+    }
+
+    fn persist_profile_state_if_due(&mut self) {
+        if self.last_profile_persist_at.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+        self.last_profile_persist_at = Instant::now();
+        let Some(db) = &self.profile_db else {
+            return;
+        };
+
+        let queue: Vec<String> = self.shell_state.tts_queue.iter().cloned().collect();
+        let _ = db.save_tts_state(self.shell_state.tts_playing, &queue);
+        let _ = db.save_visit_stats(
+            self.shell_state.visit_total,
+            self.shell_state.revisit_total,
+            &self.shell_state.visit_counts,
+        );
+        for item in self.shell_state.reading_queue.iter() {
+            let _ = db.upsert_reading_item(item);
         }
     }
 
@@ -757,6 +813,8 @@ impl BrazenApp {
                 self.last_event_log_len = self.shell_state.event_log.len();
             }
         }
+
+        self.persist_profile_state_if_due();
     }
 
     fn apply_cursor_icon(&self, ctx: &eframe::egui::Context) {

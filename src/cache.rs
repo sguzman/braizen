@@ -1040,6 +1040,26 @@ mod tests {
     }
 
     #[test]
+    fn cache_storage_uses_profile_subdir() {
+        let dir = tempdir().unwrap();
+        let config = CacheConfig::default();
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+        let store = AssetStore::load(config, &paths, "p1".to_string());
+        assert!(store.root.ends_with("cache/p1") || store.root.ends_with("cache\\p1"));
+    }
+
+    #[test]
     fn no_dedupe_mode_stores_distinct_bodies() {
         let dir = tempdir().unwrap();
         let config = CacheConfig {

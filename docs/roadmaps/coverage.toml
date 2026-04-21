@@ -2558,21 +2558,21 @@ tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::b2c90282a9"]
 
 [[item]]
-id = "persistence-and-profiles.md:14:ff9c817744"
+id = "persistence-and-profiles.md:14:eb884273a7"
 file = "persistence-and-profiles.md"
 line = 14
-text = "Structured browser-state persistence beyond config/logs"
-status = "planned"
-tests = []
-planned_tests = ["todo::ff9c817744"]
+text = "Structured browser-state persistence beyond config/logs (SQLite per profile)"
+status = "done"
+tests = ["profile_db::tests::db_round_trips_reading_queue_and_tts", "profile_db_bootstrap::build_shell_state_loads_profile_sqlite_state"]
+planned_tests = ["todo::eb884273a7"]
 
 [[item]]
 id = "persistence-and-profiles.md:15:f4aec01b49"
 file = "persistence-and-profiles.md"
 line = 15
 text = "Session persistence"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::f4aec01b49"]
 
 [[item]]
@@ -2580,8 +2580,8 @@ id = "persistence-and-profiles.md:16:fd6f1197d1"
 file = "persistence-and-profiles.md"
 line = 16
 text = "History persistence"
-status = "planned"
-tests = []
+status = "done"
+tests = ["profile_db_bootstrap::build_shell_state_loads_profile_sqlite_state"]
 planned_tests = ["todo::fd6f1197d1"]
 
 [[item]]
@@ -2603,13 +2603,13 @@ tests = []
 planned_tests = ["todo::e9c6492c2a"]
 
 [[item]]
-id = "persistence-and-profiles.md:19:0a1e2bf0ac"
+id = "persistence-and-profiles.md:19:65d5ae06e9"
 file = "persistence-and-profiles.md"
 line = 19
-text = "Reading and knowledge persistence"
-status = "planned"
-tests = []
-planned_tests = ["todo::0a1e2bf0ac"]
+text = "Reading and knowledge persistence (reading + TTS + visit stats)"
+status = "done"
+tests = ["profile_db::tests::db_round_trips_visit_stats", "profile_db_bootstrap::build_shell_state_loads_profile_sqlite_state"]
+planned_tests = ["todo::65d5ae06e9"]
 
 [[item]]
 id = "persistence-and-profiles.md:23:37aaa2e138"
@@ -2625,8 +2625,8 @@ id = "persistence-and-profiles.md:24:35eeb65d84"
 file = "persistence-and-profiles.md"
 line = 24
 text = "Per-profile cache roots"
-status = "planned"
-tests = []
+status = "done"
+tests = ["cache::tests::cache_storage_uses_profile_subdir"]
 planned_tests = ["todo::35eeb65d84"]
 
 [[item]]

@@ -11,17 +11,17 @@ Tracks config, data directories, structured local state, and multi-profile isola
 
 ## Persistence Layers
 
-- [ ] Structured browser-state persistence beyond config/logs
-- [ ] Session persistence
-- [ ] History persistence
+- [x] Structured browser-state persistence beyond config/logs (SQLite per profile)
+- [x] Session persistence
+- [x] History persistence
 - [ ] Permission-grant persistence
 - [ ] Cache index persistence
-- [ ] Reading and knowledge persistence
+- [x] Reading and knowledge persistence (reading + TTS + visit stats)
 
 ## Profiles
 
 - [ ] Profile creation and switching
-- [ ] Per-profile cache roots
+- [x] Per-profile cache roots
 - [ ] Per-profile connector policies
 - [ ] Per-profile automation/API settings
 - [ ] Import/export profile bundles

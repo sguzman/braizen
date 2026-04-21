@@ -775,6 +775,7 @@ dependencies = [
  "http 1.4.0",
  "image",
  "libservo",
+ "rusqlite",
  "rustls",
  "serde",
  "serde_json",
