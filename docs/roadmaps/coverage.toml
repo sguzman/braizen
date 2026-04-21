@@ -203,8 +203,8 @@ id = "automation-and-external-apis.md:38:c893a60dca"
 file = "automation-and-external-apis.md"
 line = 38
 text = "CLI Introspection Suite (`brazen introspect ...`)"
-status = "planned"
-tests = []
+status = "done"
+tests = ["cli_introspect::tests::clap_parses_list_tabs"]
 planned_tests = ["todo::c893a60dca"]
 
 [[item]]
@@ -212,8 +212,8 @@ id = "automation-and-external-apis.md:39:c7e5d9b455"
 file = "automation-and-external-apis.md"
 line = 39
 text = "`list-windows`: Show all running window IDs and titles"
-status = "planned"
-tests = []
+status = "done"
+tests = ["cli_introspect::tests::clap_parses_list_windows"]
 planned_tests = ["todo::c7e5d9b455"]
 
 [[item]]
@@ -221,8 +221,8 @@ id = "automation-and-external-apis.md:40:94eb36ab3f"
 file = "automation-and-external-apis.md"
 line = 40
 text = "`list-tabs`: Show tabs grouped by window"
-status = "planned"
-tests = []
+status = "done"
+tests = ["cli_introspect::tests::clap_parses_list_tabs"]
 planned_tests = ["todo::94eb36ab3f"]
 
 [[item]]
@@ -230,8 +230,8 @@ id = "automation-and-external-apis.md:41:c78285e647"
 file = "automation-and-external-apis.md"
 line = 41
 text = "`list-logs`: Stream or tail the internal application logs"
-status = "planned"
-tests = []
+status = "done"
+tests = ["cli_introspect::tests::clap_parses_logs_follow"]
 planned_tests = ["todo::c78285e647"]
 
 [[item]]
@@ -239,8 +239,8 @@ id = "automation-and-external-apis.md:42:7a22cb1050"
 file = "automation-and-external-apis.md"
 line = 42
 text = "`get-dom`: Retrieve a serialized/A11y-tree view of a specific tab"
-status = "planned"
-tests = []
+status = "done"
+tests = ["cli_introspect::tests::clap_parses_get_dom_selector"]
 planned_tests = ["todo::7a22cb1050"]
 
 [[item]]
@@ -257,8 +257,8 @@ id = "automation-and-external-apis.md:44:28553aee80"
 file = "automation-and-external-apis.md"
 line = 44
 text = "`screenshot-tab`: Capture the current visual state of a tab"
-status = "planned"
-tests = []
+status = "done"
+tests = ["cli_introspect::tests::clap_parses_screenshot_output"]
 planned_tests = ["todo::28553aee80"]
 
 [[item]]

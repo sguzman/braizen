@@ -266,3 +266,44 @@ pub async fn run_introspect_cli(args: &[String]) -> Result<(), Box<dyn std::erro
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clap_parses_list_windows() {
+        let cli = IntrospectArgs::parse_from(["introspect", "list-windows"]);
+        assert!(matches!(cli.command, IntrospectCommand::ListWindows));
+    }
+
+    #[test]
+    fn clap_parses_list_tabs() {
+        let cli = IntrospectArgs::parse_from(["introspect", "list-tabs"]);
+        assert!(matches!(cli.command, IntrospectCommand::ListTabs));
+    }
+
+    #[test]
+    fn clap_parses_logs_follow() {
+        let cli = IntrospectArgs::parse_from(["introspect", "logs", "--follow"]);
+        assert!(matches!(cli.command, IntrospectCommand::Logs { follow: true }));
+    }
+
+    #[test]
+    fn clap_parses_get_dom_selector() {
+        let cli = IntrospectArgs::parse_from(["introspect", "get-dom", "--selector", "body"]);
+        assert!(matches!(
+            cli.command,
+            IntrospectCommand::GetDom { selector } if selector == "body"
+        ));
+    }
+
+    #[test]
+    fn clap_parses_screenshot_output() {
+        let cli = IntrospectArgs::parse_from(["introspect", "screenshot", "--output", "x.png"]);
+        assert!(matches!(
+            cli.command,
+            IntrospectCommand::Screenshot { output } if output == "x.png"
+        ));
+    }
+}

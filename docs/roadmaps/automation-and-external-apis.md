@@ -35,11 +35,11 @@ Tracks local sockets, WebSocket APIs, subscriptions, and browser-state access fo
 - [ ] Stable schema for request/response payloads
 - [ ] Example CLI and scripting workflows
 - [ ] API docs and local-debug tooling
-- [ ] CLI Introspection Suite (`brazen introspect ...`)
-      - [ ] `list-windows`: Show all running window IDs and titles
-      - [ ] `list-tabs`: Show tabs grouped by window
-      - [ ] `list-logs`: Stream or tail the internal application logs
-      - [ ] `get-dom`: Retrieve a serialized/A11y-tree view of a specific tab
+- [x] CLI Introspection Suite (`brazen introspect ...`)
+      - [x] `list-windows`: Show all running window IDs and titles
+      - [x] `list-tabs`: Show tabs grouped by window
+      - [x] `list-logs`: Stream or tail the internal application logs
+      - [x] `get-dom`: Retrieve a serialized/A11y-tree view of a specific tab
       - [ ] `interact-dom`: Send events (click, type, scroll) to DOM elements
-      - [ ] `screenshot-tab`: Capture the current visual state of a tab
+      - [x] `screenshot-tab`: Capture the current visual state of a tab
       - [ ] `screenshot-window`: Capture the entire window UI
