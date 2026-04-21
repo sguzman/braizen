@@ -2084,8 +2084,8 @@ id = "navigation-and-session-model.md:7:cbc544fe3d"
 file = "navigation-and-session-model.md"
 line = 7
 text = "Active tab model exists"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::pin_mute_close_and_switch_behaviors"]
 planned_tests = ["todo::cbc544fe3d"]
 
 [[item]]
@@ -2093,8 +2093,8 @@ id = "navigation-and-session-model.md:8:43367ebec6"
 file = "navigation-and-session-model.md"
 line = 8
 text = "URL/title state exists"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_navigation_updates_history"]
 planned_tests = ["todo::43367ebec6"]
 
 [[item]]
@@ -2102,8 +2102,8 @@ id = "navigation-and-session-model.md:9:2c3f7b08ff"
 file = "navigation-and-session-model.md"
 line = 9
 text = "Navigation command dispatch exists"
-status = "planned"
-tests = []
+status = "done"
+tests = ["bootstrap::command_dispatch_routes_navigation_and_panel_state"]
 planned_tests = ["todo::2c3f7b08ff"]
 
 [[item]]
@@ -2111,8 +2111,8 @@ id = "navigation-and-session-model.md:10:3afe6acd0b"
 file = "navigation-and-session-model.md"
 line = 10
 text = "Reload command exists"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::tab_list_and_tab_new_are_ok_when_enabled"]
 planned_tests = ["todo::3afe6acd0b"]
 
 [[item]]
@@ -2120,8 +2120,8 @@ id = "navigation-and-session-model.md:11:0c2c7225b0"
 file = "navigation-and-session-model.md"
 line = 11
 text = "Engine-originated events are surfaced into shell state"
-status = "planned"
-tests = []
+status = "done"
+tests = ["app::tests::shell_state_sync_handles_ready_and_error_statuses"]
 planned_tests = ["todo::0c2c7225b0"]
 
 [[item]]
@@ -2129,8 +2129,8 @@ id = "navigation-and-session-model.md:12:c3621a81de"
 file = "navigation-and-session-model.md"
 line = 12
 text = "Back/forward commands are modeled in the shell"
-status = "planned"
-tests = []
+status = "done"
+tests = ["bootstrap::command_dispatch_routes_navigation_and_panel_state"]
 planned_tests = ["todo::c3621a81de"]
 
 [[item]]
@@ -2138,8 +2138,8 @@ id = "navigation-and-session-model.md:16:71107389b4"
 file = "navigation-and-session-model.md"
 line = 16
 text = "Back/forward navigation stacks"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::back_and_forward_stacks_move_entries"]
 planned_tests = ["todo::71107389b4"]
 
 [[item]]
@@ -2147,8 +2147,8 @@ id = "navigation-and-session-model.md:17:ecf7fc3c3e"
 file = "navigation-and-session-model.md"
 line = 17
 text = "Pending vs committed navigation state"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::pending_navigation_is_cleared_on_commit"]
 planned_tests = ["todo::ecf7fc3c3e"]
 
 [[item]]
@@ -2156,8 +2156,8 @@ id = "navigation-and-session-model.md:18:4ed713da5d"
 file = "navigation-and-session-model.md"
 line = 18
 text = "Redirect chain capture"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::pending_navigation_is_cleared_on_commit"]
 planned_tests = ["todo::4ed713da5d"]
 
 [[item]]
@@ -2165,8 +2165,8 @@ id = "navigation-and-session-model.md:19:618b917df2"
 file = "navigation-and-session-model.md"
 line = 19
 text = "Window and tab lineage model"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::open_new_tab_sets_lineage_from_active"]
 planned_tests = ["todo::618b917df2"]
 
 [[item]]
@@ -2174,8 +2174,8 @@ id = "navigation-and-session-model.md:20:d85d7c1312"
 file = "navigation-and-session-model.md"
 line = 20
 text = "Session restore"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::d85d7c1312"]
 
 [[item]]
@@ -2183,8 +2183,8 @@ id = "navigation-and-session-model.md:21:8076d552c6"
 file = "navigation-and-session-model.md"
 line = 21
 text = "Crash recovery state"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::8076d552c6"]
 
 [[item]]
@@ -2192,8 +2192,8 @@ id = "navigation-and-session-model.md:22:3114ffedc9"
 file = "navigation-and-session-model.md"
 line = 22
 text = "Profile-bound session separation"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::3114ffedc9"]
 
 [[item]]
@@ -2201,8 +2201,8 @@ id = "navigation-and-session-model.md:23:c41ae70c93"
 file = "navigation-and-session-model.md"
 line = 23
 text = "Session file format versioning"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::c41ae70c93"]
 
 [[item]]
@@ -2210,8 +2210,8 @@ id = "navigation-and-session-model.md:24:4c00d40cda"
 file = "navigation-and-session-model.md"
 line = 24
 text = "Session JSON persistence"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::4c00d40cda"]
 
 [[item]]
@@ -2219,8 +2219,8 @@ id = "navigation-and-session-model.md:28:1dd804dbb5"
 file = "navigation-and-session-model.md"
 line = 28
 text = "Structured models for windows, tabs, frames, and documents"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::1dd804dbb5"]
 
 [[item]]
@@ -2264,8 +2264,8 @@ id = "navigation-and-session-model.md:33:29b21f98c4"
 file = "navigation-and-session-model.md"
 line = 33
 text = "Navigation history stored per tab"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_navigation_updates_history"]
 planned_tests = ["todo::29b21f98c4"]
 
 [[item]]
@@ -2282,8 +2282,8 @@ id = "navigation-and-session-model.md:38:1d537a26e2"
 file = "navigation-and-session-model.md"
 line = 38
 text = "Duplicate, pin, mute, and close behaviors"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::pin_mute_close_and_switch_behaviors"]
 planned_tests = ["todo::1d537a26e2"]
 
 [[item]]
@@ -2300,8 +2300,8 @@ id = "navigation-and-session-model.md:40:e6e0614487"
 file = "navigation-and-session-model.md"
 line = 40
 text = "Active tab switching UI"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::pin_mute_close_and_switch_behaviors"]
 planned_tests = ["todo::e6e0614487"]
 
 [[item]]
@@ -2318,8 +2318,8 @@ id = "navigation-and-session-model.md:42:120cc3c264"
 file = "navigation-and-session-model.md"
 line = 42
 text = "Crash recovery flag persisted in snapshots"
-status = "planned"
-tests = []
+status = "done"
+tests = ["session::tests::session_json_persistence_round_trip"]
 planned_tests = ["todo::120cc3c264"]
 
 [[item]]

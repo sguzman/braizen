@@ -4,39 +4,39 @@ Tracks tabs, windows, browsing sessions, lifecycle state, and the browser’s in
 
 ## Current State
 
-- [ ] Active tab model exists
-- [ ] URL/title state exists
-- [ ] Navigation command dispatch exists
-- [ ] Reload command exists
-- [ ] Engine-originated events are surfaced into shell state
-- [ ] Back/forward commands are modeled in the shell
+- [x] Active tab model exists
+- [x] URL/title state exists
+- [x] Navigation command dispatch exists
+- [x] Reload command exists
+- [x] Engine-originated events are surfaced into shell state
+- [x] Back/forward commands are modeled in the shell
 
 ## Core Session Model
 
-- [ ] Back/forward navigation stacks
-- [ ] Pending vs committed navigation state
-- [ ] Redirect chain capture
-- [ ] Window and tab lineage model
-- [ ] Session restore
-- [ ] Crash recovery state
-- [ ] Profile-bound session separation
-- [ ] Session file format versioning
-- [ ] Session JSON persistence
+- [x] Back/forward navigation stacks
+- [x] Pending vs committed navigation state
+- [x] Redirect chain capture
+- [x] Window and tab lineage model
+- [x] Session restore
+- [x] Crash recovery state
+- [x] Profile-bound session separation
+- [x] Session file format versioning
+- [x] Session JSON persistence
 
 ## Browser Data Model
 
-- [ ] Structured models for windows, tabs, frames, and documents
+- [x] Structured models for windows, tabs, frames, and documents
 - [ ] Selection and focused-element state
 - [ ] Download and permission-grant linkage to sessions
 - [ ] Browsing-session identifiers stable across subsystems
 - [ ] Revisit history and tab lineage metadata
-- [ ] Navigation history stored per tab
+- [x] Navigation history stored per tab
 
 ## User-Facing Flows
 
 - [ ] Open in new tab/window flows
-- [ ] Duplicate, pin, mute, and close behaviors
+- [x] Duplicate, pin, mute, and close behaviors
 - [ ] Session snapshot export/import
-- [ ] Active tab switching UI
+- [x] Active tab switching UI
 - [ ] Profile-based session path usage
-- [ ] Crash recovery flag persisted in snapshots
+- [x] Crash recovery flag persisted in snapshots

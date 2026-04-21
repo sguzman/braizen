@@ -282,4 +282,98 @@ mod tests {
         assert_eq!(session.active_tab_mut().url, "https://example.com");
         assert_eq!(session.active_tab_mut().history.len(), 1);
     }
+
+    #[test]
+    fn pending_navigation_is_cleared_on_commit() {
+        let mut session = SessionSnapshot::new("default".to_string(), "now".to_string());
+        session.mark_pending_navigation("https://example.com", "t0".to_string());
+        assert!(session.active_tab().unwrap().pending.is_some());
+        session.commit_navigation(NavigationEntry {
+            url: "https://example.com".to_string(),
+            title: "Example".to_string(),
+            timestamp: "t1".to_string(),
+            redirect_chain: vec!["https://example.com".to_string()],
+        });
+        assert!(session.active_tab().unwrap().pending.is_none());
+    }
+
+    #[test]
+    fn back_and_forward_stacks_move_entries() {
+        let mut session = SessionSnapshot::new("default".to_string(), "now".to_string());
+        session.commit_navigation(NavigationEntry {
+            url: "https://a.test".to_string(),
+            title: "A".to_string(),
+            timestamp: "t1".to_string(),
+            redirect_chain: Vec::new(),
+        });
+        session.commit_navigation(NavigationEntry {
+            url: "https://b.test".to_string(),
+            title: "B".to_string(),
+            timestamp: "t2".to_string(),
+            redirect_chain: Vec::new(),
+        });
+        assert_eq!(session.active_tab().unwrap().url, "https://b.test");
+        assert_eq!(session.active_tab().unwrap().back_stack.len(), 2);
+        assert!(session.active_tab().unwrap().forward_stack.is_empty());
+
+        session.go_back("t3".to_string());
+        assert_eq!(session.active_tab().unwrap().url, "https://a.test");
+        assert_eq!(session.active_tab().unwrap().forward_stack.len(), 1);
+
+        session.go_forward("t4".to_string());
+        assert_eq!(session.active_tab().unwrap().url, "https://b.test");
+    }
+
+    #[test]
+    fn open_new_tab_sets_lineage_from_active() {
+        let mut session = SessionSnapshot::new("default".to_string(), "now".to_string());
+        let origin = session.active_tab().unwrap().id.clone();
+        session.open_new_tab("https://example.com", "Example");
+        let tab = session.active_tab().unwrap();
+        assert_eq!(tab.url, "https://example.com");
+        assert_eq!(tab.lineage.created_from.as_ref(), Some(&origin));
+    }
+
+    #[test]
+    fn duplicate_tab_sets_lineage_and_new_id() {
+        let mut session = SessionSnapshot::new("default".to_string(), "now".to_string());
+        let origin = session.active_tab().unwrap().id.clone();
+        session.duplicate_active_tab();
+        let tab = session.active_tab().unwrap();
+        assert_ne!(tab.id, origin);
+        assert_eq!(tab.lineage.created_from.as_ref(), Some(&origin));
+    }
+
+    #[test]
+    fn pin_mute_close_and_switch_behaviors() {
+        let mut session = SessionSnapshot::new("default".to_string(), "now".to_string());
+        session.open_new_tab("https://a.test", "A");
+        session.open_new_tab("https://b.test", "B");
+        assert_eq!(session.active_tab().unwrap().title, "B");
+
+        session.set_active_tab(0);
+        assert_eq!(session.active_tab().unwrap().title, "New Tab");
+        session.toggle_pin_active_tab();
+        session.toggle_mute_active_tab();
+        assert!(session.active_tab().unwrap().pinned);
+        assert!(session.active_tab().unwrap().muted);
+
+        session.close_active_tab();
+        assert_ne!(session.active_tab().unwrap().title, "New Tab");
+    }
+
+    #[test]
+    fn session_json_persistence_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let mut session = SessionSnapshot::new("p".to_string(), "now".to_string());
+        session.crash_recovery_pending = true;
+        session.open_new_tab("https://example.com", "Example");
+        save_session(&path, &session).unwrap();
+        let loaded = load_session(&path).unwrap();
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.profile_id, "p");
+        assert!(loaded.crash_recovery_pending);
+        assert!(loaded.windows[0].tabs.len() >= 2);
+    }
 }
