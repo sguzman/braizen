@@ -23,6 +23,7 @@ use libservo::{
 use libservo::clipboard_delegate::{ClipboardDelegate, StringRequest};
 use tracing_log::LogTracer;
 use http::HeaderMap;
+use base64::Engine;
 use crate::engine::EngineEvent;
 use crate::mounts::MountManager;
 use crate::session::SessionSnapshot;
@@ -182,9 +183,78 @@ impl WebViewDelegate for BrazenWebViewDelegate {
     fn load_web_resource(&self, _webview: WebView, load: WebResourceLoad) {
         let url = load.request.url.clone();
         
-        if let Some((path, _read_only)) = self.mount_manager.resolve_fs_request(&url) {
+        if let Some((path, read_only)) = self.mount_manager.resolve_fs_request(&url) {
             tracing::info!(target: "brazen::mounts", url = %url, path = ?path, "intercepting virtual resource");
             
+            // Directory listing
+            if path.is_dir() {
+                if let Some((data, mime)) = self.mount_manager.list_directory_json(&url) {
+                    let mut headers = HeaderMap::new();
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        http::HeaderValue::from_static(mime),
+                    );
+                    self.send_intercepted_response(load, headers, data);
+                }
+                return;
+            }
+
+            // Optional write via query parameter (dangerous; gated by permissions + read_only).
+            let mut write_b64: Option<String> = None;
+            for (k, v) in url.query_pairs() {
+                if k == "write_base64" {
+                    write_b64 = Some(v.into_owned());
+                }
+            }
+            if let Some(b64) = write_b64 {
+                if read_only {
+                    tracing::warn!(target: "brazen::mounts", url = %url, "denying fs write due to read-only mount");
+                    return;
+                }
+                // Check permissions
+                let origin = load
+                    .request
+                    .headers
+                    .get("Origin")
+                    .and_then(|h| h.to_str().ok())
+                    .unwrap_or("null");
+                let decision = if origin == "null" {
+                    crate::permissions::PermissionDecision::Allow
+                } else {
+                    let origin_url = Url::parse(origin).ok();
+                    let host = origin_url.as_ref().and_then(|u| u.host_str()).unwrap_or(origin);
+                    self.permissions
+                        .decision_for_domain(host, &crate::permissions::Capability::FsWrite)
+                };
+                if decision != crate::permissions::PermissionDecision::Allow {
+                    tracing::warn!(target: "brazen::mounts", origin = %origin, "denying fs write due to permissions");
+                    return;
+                }
+
+                match base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()) {
+                    Ok(bytes) => {
+                        if let Err(e) = std::fs::write(&path, bytes) {
+                            tracing::error!(target: "brazen::mounts", url = %url, error = ?e, "failed to write virtual resource");
+                            return;
+                        }
+                        let mut headers = HeaderMap::new();
+                        headers.insert(
+                            http::header::CONTENT_TYPE,
+                            http::HeaderValue::from_static("application/json"),
+                        );
+                        self.send_intercepted_response(
+                            load,
+                            headers,
+                            serde_json::to_vec(&serde_json::json!({"ok": true})).unwrap_or_default(),
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(target: "brazen::mounts", url = %url, error = ?e, "failed to decode write_base64");
+                    }
+                }
+                return;
+            }
+
             // Try to read the file
             match std::fs::read(&path) {
                 Ok(data) => {
@@ -316,7 +386,8 @@ impl WebViewDelegate for BrazenWebViewDelegate {
         } else {
             let origin_url = Url::parse(origin).ok();
             let host = origin_url.as_ref().and_then(|u| u.host_str()).unwrap_or(origin);
-            self.permissions.decision_for_domain(host, &crate::permissions::Capability::VirtualResourceMount)
+            self.permissions
+                .decision_for_domain(host, &crate::permissions::Capability::FsRead)
         };
 
         if decision == crate::permissions::PermissionDecision::Allow {

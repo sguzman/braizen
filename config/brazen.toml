@@ -110,10 +110,13 @@ default = "ask"
 
 [permissions.capabilities]
 terminal-exec = "deny"
+terminal-output-read = "ask"
 dom-read = "ask"
 cache-read = "ask"
 tab-inspect = "ask"
 ai-tool-use = "ask"
+fs-read = "ask"
+fs-write = "deny"
 
 [terminal]
 # allowlist = ["rg", "ls", "cat", "echo"]

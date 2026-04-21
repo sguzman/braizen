@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use serde::{Serialize, Deserialize};
 use url::Url;
+use serde_json::json;
 
 /// The type of resource being mounted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +101,70 @@ impl MountManager {
         }
     }
 
+    /// Resolve a brazen://fs request to a mount plus a local path (without performing IO).
+    /// Returns (mount, full_path, remaining_segments).
+    pub fn resolve_fs_target(&self, url: &Url) -> Option<(Mount, PathBuf)> {
+        if url.scheme() != "brazen" {
+            return None;
+        }
+        if url.host_str()? != "fs" {
+            return None;
+        }
+        let mut path_segments = url.path_segments()?;
+        let mount_name = path_segments.next()?;
+        let inner = self.inner.read().unwrap();
+        let mount = inner.mounts.get(mount_name)?.clone();
+
+        let MountType::FileSystem(base_path) = &mount.mount_type else {
+            return None;
+        };
+        let mut full_path = base_path.clone();
+        for segment in path_segments {
+            if segment == ".." || segment.contains('/') || segment.contains('\\') {
+                return None;
+            }
+            full_path.push(segment);
+        }
+        if full_path.starts_with(base_path) {
+            Some((mount, full_path))
+        } else {
+            None
+        }
+    }
+
+    pub fn list_directory_json(&self, url: &Url) -> Option<(Vec<u8>, &'static str)> {
+        let (mount, path) = self.resolve_fs_target(url)?;
+        let MountType::FileSystem(base_path) = &mount.mount_type else {
+            return None;
+        };
+        if !path.starts_with(base_path) {
+            return None;
+        }
+        let entries = std::fs::read_dir(&path).ok()?;
+        let mut out = Vec::new();
+        for entry in entries.flatten() {
+            let file_type = entry.file_type().ok();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = file_type.as_ref().map(|t| t.is_dir()).unwrap_or(false);
+            let is_file = file_type.as_ref().map(|t| t.is_file()).unwrap_or(false);
+            let size = entry.metadata().ok().map(|m| m.len());
+            out.push(json!({
+                "name": name,
+                "is_dir": is_dir,
+                "is_file": is_file,
+                "size_bytes": size,
+            }));
+        }
+        let payload = serde_json::to_vec(&json!({
+            "mount": mount.name,
+            "path": url.path(),
+            "read_only": mount.read_only,
+            "entries": out
+        }))
+        .ok()?;
+        Some((payload, "application/json"))
+    }
+
     /// Resolve a brazen://terminal request.
     pub fn resolve_terminal_request(&self, url: &Url) -> bool {
         url.scheme() == "brazen" && url.host_str() == Some("terminal")
@@ -119,5 +184,25 @@ impl MountManager {
     pub fn list_mounts(&self) -> Vec<Mount> {
         let inner = self.inner.read().unwrap();
         inner.mounts.values().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn resolve_fs_target_denies_traversal() {
+        let dir = tempdir().unwrap();
+        let manager = MountManager::new();
+        manager.add_mount(Mount {
+            name: "root".to_string(),
+            mount_type: MountType::FileSystem(dir.path().to_path_buf()),
+            read_only: true,
+        });
+
+        let url = Url::parse("brazen://fs/root/../secret.txt").unwrap();
+        assert!(manager.resolve_fs_target(&url).is_none());
     }
 }

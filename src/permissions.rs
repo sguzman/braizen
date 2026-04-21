@@ -6,22 +6,28 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 pub enum Capability {
     TerminalExec,
+    TerminalOutputRead,
     DomRead,
     CacheRead,
     TabInspect,
     AiToolUse,
     VirtualResourceMount,
+    FsRead,
+    FsWrite,
 }
 
 impl Capability {
     pub fn label(&self) -> &'static str {
         match self {
             Self::TerminalExec => "terminal-exec",
+            Self::TerminalOutputRead => "terminal-output-read",
             Self::DomRead => "dom-read",
             Self::CacheRead => "cache-read",
             Self::TabInspect => "tab-inspect",
             Self::AiToolUse => "ai-tool-use",
             Self::VirtualResourceMount => "virtual-resource-mount",
+            Self::FsRead => "fs-read",
+            Self::FsWrite => "fs-write",
         }
     }
 }
@@ -47,11 +53,14 @@ impl Default for PermissionPolicy {
     fn default() -> Self {
         let mut capabilities = BTreeMap::new();
         capabilities.insert(Capability::TerminalExec, PermissionDecision::Deny);
+        capabilities.insert(Capability::TerminalOutputRead, PermissionDecision::Ask);
         capabilities.insert(Capability::DomRead, PermissionDecision::Ask);
         capabilities.insert(Capability::CacheRead, PermissionDecision::Ask);
         capabilities.insert(Capability::TabInspect, PermissionDecision::Ask);
         capabilities.insert(Capability::AiToolUse, PermissionDecision::Ask);
         capabilities.insert(Capability::VirtualResourceMount, PermissionDecision::Deny);
+        capabilities.insert(Capability::FsRead, PermissionDecision::Ask);
+        capabilities.insert(Capability::FsWrite, PermissionDecision::Deny);
 
         Self {
             default: PermissionDecision::Ask,
