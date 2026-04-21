@@ -31,7 +31,7 @@ impl ProfileDb {
     }
 
     fn init(&self) -> Result<(), String> {
-        let mut conn = self.connect()?;
+        let conn = self.connect()?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("pragma journal_mode failed: {e}"))?;
 
@@ -141,7 +141,7 @@ impl ProfileDb {
     }
 
     pub fn append_history(&self, url: &str, title: Option<&str>, visited_at: &str) -> Result<(), String> {
-        let mut conn = self.connect()?;
+        let conn = self.connect()?;
         conn.execute(
             "INSERT INTO history(url,title,visited_at) VALUES(?,?,?)",
             (url, title, visited_at),
@@ -167,7 +167,7 @@ impl ProfileDb {
     }
 
     pub fn save_tts_state(&self, playing: bool, queue: &[String]) -> Result<(), String> {
-        let mut conn = self.connect()?;
+        let conn = self.connect()?;
         let json = serde_json::to_string(queue).map_err(|e| format!("serialize tts queue: {e}"))?;
         conn.execute(
             "UPDATE tts_state SET playing=?, queue_json=? WHERE id=1",
@@ -194,7 +194,7 @@ impl ProfileDb {
     }
 
     pub fn upsert_reading_item(&self, item: &ReadingQueueItem) -> Result<(), String> {
-        let mut conn = self.connect()?;
+        let conn = self.connect()?;
         conn.execute(
             r#"
             INSERT INTO reading_queue(url,title,kind,saved_at,progress,article_text)
@@ -220,14 +220,14 @@ impl ProfileDb {
     }
 
     pub fn remove_reading_item(&self, url: &str) -> Result<(), String> {
-        let mut conn = self.connect()?;
+        let conn = self.connect()?;
         conn.execute("DELETE FROM reading_queue WHERE url=?", [url])
             .map_err(|e| format!("delete reading item failed: {e}"))?;
         Ok(())
     }
 
     pub fn clear_reading_queue(&self) -> Result<(), String> {
-        let mut conn = self.connect()?;
+        let conn = self.connect()?;
         conn.execute("DELETE FROM reading_queue", [])
             .map_err(|e| format!("clear reading queue failed: {e}"))?;
         Ok(())

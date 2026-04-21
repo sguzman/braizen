@@ -37,15 +37,19 @@ console_filter = "info"
 file_filter = "off"
 "#
     );
+    println!("Writing test config to {}: \n{}", path.display(), toml);
     std::fs::write(path, toml).expect("write config");
 }
 
-fn spawn_brazen(config_path: &std::path::Path, endpoint_file: &std::path::Path) -> Child {
+fn spawn_brazen(config_path: &std::path::Path, endpoint_file: &std::path::Path, tmp_dir: &std::path::Path) -> Child {
     let exe = env!("CARGO_BIN_EXE_brazen");
     Command::new(exe)
         .arg("--config")
         .arg(config_path)
         .env("BRAZEN_AUTOMATION_ENDPOINT_FILE", endpoint_file)
+        .env("XDG_DATA_HOME", tmp_dir.join("data"))
+        .env("XDG_CONFIG_HOME", tmp_dir.join("config"))
+        .env("XDG_CACHE_HOME", tmp_dir.join("cache"))
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -56,6 +60,7 @@ fn spawn_brazen_with_display(
     config_path: &std::path::Path,
     endpoint_file: &std::path::Path,
     display: &str,
+    tmp_dir: &std::path::Path,
 ) -> Child {
     let exe = env!("CARGO_BIN_EXE_brazen");
     Command::new(exe)
@@ -63,6 +68,9 @@ fn spawn_brazen_with_display(
         .arg(config_path)
         .env("BRAZEN_AUTOMATION_ENDPOINT_FILE", endpoint_file)
         .env("DISPLAY", display)
+        .env("XDG_DATA_HOME", tmp_dir.join("data"))
+        .env("XDG_CONFIG_HOME", tmp_dir.join("config"))
+        .env("XDG_CACHE_HOME", tmp_dir.join("cache"))
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -187,9 +195,9 @@ async fn e2e_boot_connect_logs_and_shutdown() {
 
     let mut xvfb = start_xvfb_or_skip();
     let mut child = if let Some((_, ref display)) = xvfb {
-        spawn_brazen_with_display(&config_path, &endpoint_file, display)
+        spawn_brazen_with_display(&config_path, &endpoint_file, display, tmp.path())
     } else {
-        spawn_brazen(&config_path, &endpoint_file)
+        spawn_brazen(&config_path, &endpoint_file, tmp.path())
     };
     let url = wait_for_endpoint_file(&endpoint_file).await;
 
@@ -338,9 +346,9 @@ async fn e2e_automation_roadmap_features() {
 
     let mut xvfb = start_xvfb_or_skip();
     let mut child = if let Some((_, ref display)) = xvfb {
-        spawn_brazen_with_display(&config_path, &endpoint_file, display)
+        spawn_brazen_with_display(&config_path, &endpoint_file, display, tmp.path())
     } else {
-        spawn_brazen(&config_path, &endpoint_file)
+        spawn_brazen(&config_path, &endpoint_file, tmp.path())
     };
     let url = wait_for_endpoint_file(&endpoint_file).await;
 

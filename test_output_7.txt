@@ -1,0 +1,242 @@
+[1m[92m   Compiling[0m brazen v0.1.0 (/win/linux/Code/rust/brazen)
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+  [1m[94m--> [0msrc/profile_db.rs:34:13
+   [1m[94m|[0m
+[1m[94m34[0m [1m[94m|[0m         let mut conn = self.connect()?;
+   [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^[0m
+   [1m[94m|[0m             [1m[94m|[0m
+   [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+   [1m[94m--> [0msrc/profile_db.rs:144:13
+    [1m[94m|[0m
+[1m[94m144[0m [1m[94m|[0m         let mut conn = self.connect()?;
+    [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^[0m
+    [1m[94m|[0m             [1m[94m|[0m
+    [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+   [1m[94m--> [0msrc/profile_db.rs:170:13
+    [1m[94m|[0m
+[1m[94m170[0m [1m[94m|[0m         let mut conn = self.connect()?;
+    [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^[0m
+    [1m[94m|[0m             [1m[94m|[0m
+    [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+   [1m[94m--> [0msrc/profile_db.rs:197:13
+    [1m[94m|[0m
+[1m[94m197[0m [1m[94m|[0m         let mut conn = self.connect()?;
+    [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^[0m
+    [1m[94m|[0m             [1m[94m|[0m
+    [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+   [1m[94m--> [0msrc/profile_db.rs:223:13
+    [1m[94m|[0m
+[1m[94m223[0m [1m[94m|[0m         let mut conn = self.connect()?;
+    [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^[0m
+    [1m[94m|[0m             [1m[94m|[0m
+    [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+
+[1m[33mwarning[0m[1m: variable does not need to be mutable[0m
+   [1m[94m--> [0msrc/profile_db.rs:230:13
+    [1m[94m|[0m
+[1m[94m230[0m [1m[94m|[0m         let mut conn = self.connect()?;
+    [1m[94m|[0m             [1m[94m----[0m[1m[33m^^^^[0m
+    [1m[94m|[0m             [1m[94m|[0m
+    [1m[94m|[0m             [1m[94mhelp: remove this `mut`[0m
+
+[1m[33mwarning[0m: `brazen` (lib) generated 6 warnings (run `cargo fix --lib -p brazen` to apply 6 suggestions)
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`test` profile [unoptimized + debuginfo]]8;;\ target(s) in 3.96s
+[1m[92m     Running[0m tests/e2e_automation.rs (target/debug/deps/e2e_automation-8962568869d03b56)
+
+running 1 test
+Writing test config to /tmp/.tmpCLbquo/brazen.toml: 
+
+[features]
+automation_server = true
+
+[automation]
+enabled = true
+bind = "ws://127.0.0.1:0/ws"
+require_auth = false
+
+[permissions]
+default = "allow"
+[permissions.capabilities]
+tab-inspect = "allow"
+dom-read = "allow"
+cache-read = "allow"
+terminal-exec = "allow"
+terminal-output-read = "allow"
+ai-tool-use = "allow"
+virtual-resource-mount = "allow"
+fs-read = "allow"
+fs-write = "allow"
+
+[logging]
+console_filter = "info"
+file_filter = "off"
+
+DEBUG: loading config from /tmp/.tmpCLbquo/brazen.toml:
+
+[features]
+automation_server = true
+
+[automation]
+enabled = true
+bind = "ws://127.0.0.1:0/ws"
+require_auth = false
+
+[permissions]
+default = "allow"
+[permissions.capabilities]
+tab-inspect = "allow"
+dom-read = "allow"
+cache-read = "allow"
+terminal-exec = "allow"
+terminal-output-read = "allow"
+ai-tool-use = "allow"
+virtual-resource-mount = "allow"
+fs-read = "allow"
+fs-write = "allow"
+
+[logging]
+console_filter = "info"
+file_filter = "off"
+
+DEBUG: base config before merge: Table({"app": Table({"homepage": String("https://example.invalid/brazen"), "mode": String("dev"), "name": String("Brazen"), "tagline": String("Capability Browser Platform")}), "automation": Table({"bind": String("ws://127.0.0.1:7942"), "enabled": Boolean(false), "expose_cache_api": Boolean(false), "expose_tab_api": Boolean(true), "max_connections": Integer(8), "max_messages_per_minute": Integer(600), "max_subscriptions": Integer(8), "require_auth": Boolean(true)}), "cache": Table({"archive_replay_mode": Boolean(false), "authenticated_only": Boolean(false), "capture_html_json_css_js": Boolean(true), "capture_media": Boolean(true), "capture_mode": String("selective"), "dedupe_bodies": Boolean(true), "gc_max_entries": Integer(5000), "gc_strategy": String("none"), "host_allowlist": Array([]), "host_denylist": Array([]), "host_overrides": Table({}), "max_entry_bytes": Integer(10485760), "max_total_bytes": Integer(0), "metadata_capture": Boolean(true), "mime_allowlist": Array([String("text/html"), String("application/json"), String("text/css"), String("application/javascript"), String("image/png")]), "mime_denylist": Array([]), "selective_body_capture": Boolean(true), "storage_mode": String("disk"), "third_party_mode": String("metadata-only")}), "directories": Table({"cache_dir": String("default"), "crash_dumps_dir": String("default"), "data_dir": String("default"), "downloads_dir": String("default"), "logs_dir": String("default"), "profiles_dir": String("default")}), "engine": Table({"alpha_mode": String("straight"), "color_space": String("srgb"), "debug_bypass_swizzle": Boolean(false), "debug_capture_dir": String("logs"), "debug_capture_next_frame": Boolean(false), "debug_frame_probe": Boolean(true), "debug_pixel_probe": Boolean(false), "debug_pointer_overlay": Boolean(false), "devtools_enabled": Boolean(false), "devtools_transport": String("none"), "enable_multiprocess": Boolean(false), "frame_pacing": String("vsync"), "gfx_backend": String("gl"), "ignore_certificate_errors": Boolean(false), "input_logging": Boolean(false), "new_window_policy": String("same-tab"), "pixel_format": String("rgba8"), "process_model": String("single-process"), "profile_isolation": Boolean(false), "render_mode": String("cpu-readback"), "resource_limits": Table({"cpu_ms": Integer(200), "max_tabs": Integer(32), "memory_mb": Integer(2048)}), "security_warnings": Boolean(true), "service_worker_policy": String("default"), "servo_source_rev": String("b73ae02"), "servo_source_tag": String("v0.0.4"), "startup_url": String("https://example.com"), "storage_policy": String("profile-scoped"), "verbose_logging": Boolean(false), "webrender_backend": String("gl"), "zoom_default": Float(1.0), "zoom_max": Float(3.0), "zoom_min": Float(0.5), "zoom_step": Float(0.10000000149011612)}), "extraction": Table({"article_processing_enabled": Boolean(false), "ontology_capture_enabled": Boolean(false), "rss_rehydration_enabled": Boolean(false)}), "features": Table({"automation_server": Boolean(false), "cache_inspector": Boolean(true), "servo_backend": Boolean(false), "shell_status_panel": Boolean(true)}), "logging": Table({"ansi": Boolean(true), "console_filter": String("info,brazen=debug"), "file_filter": String("debug,brazen=trace"), "file_name_prefix": String("brazen.log")}), "media": Table({"auto_queue_reader_mode": Boolean(false), "default_tts_provider": String("none")}), "permissions": Table({"capabilities": Table({"ai-tool-use": String("ask"), "cache-read": String("ask"), "dom-read": String("ask"), "fs-read": String("ask"), "fs-write": String("deny"), "tab-inspect": String("ask"), "terminal-exec": String("deny"), "terminal-output-read": String("ask"), "virtual-resource-mount": String("deny")}), "default": String("ask"), "domain_overrides": Table({})}), "profiles": Table({"active_profile": String("default")}), "terminal": Table({"allowlist": Array([]), "max_args": Integer(32), "max_stderr_bytes": Integer(262144), "max_stdout_bytes": Integer(1048576), "timeout_ms": Integer(10000)}), "window": Table({"initial_height": Float(920.0), "initial_width": Float(1440.0), "min_height": Float(640.0), "min_width": Float(960.0), "show_log_panel_on_startup": Boolean(true), "show_permission_panel_on_startup": Boolean(false)})})
+DEBUG: overlay config: Table({"automation": Table({"bind": String("ws://127.0.0.1:0/ws"), "enabled": Boolean(true), "require_auth": Boolean(false)}), "features": Table({"automation_server": Boolean(true)}), "logging": Table({"console_filter": String("info"), "file_filter": String("off")}), "permissions": Table({"capabilities": Table({"ai-tool-use": String("allow"), "cache-read": String("allow"), "dom-read": String("allow"), "fs-read": String("allow"), "fs-write": String("allow"), "tab-inspect": String("allow"), "terminal-exec": String("allow"), "terminal-output-read": String("allow"), "virtual-resource-mount": String("allow")}), "default": String("allow")})})
+DEBUG: base config after merge: Table({"app": Table({"homepage": String("https://example.invalid/brazen"), "mode": String("dev"), "name": String("Brazen"), "tagline": String("Capability Browser Platform")}), "automation": Table({"bind": String("ws://127.0.0.1:0/ws"), "enabled": Boolean(true), "expose_cache_api": Boolean(false), "expose_tab_api": Boolean(true), "max_connections": Integer(8), "max_messages_per_minute": Integer(600), "max_subscriptions": Integer(8), "require_auth": Boolean(false)}), "cache": Table({"archive_replay_mode": Boolean(false), "authenticated_only": Boolean(false), "capture_html_json_css_js": Boolean(true), "capture_media": Boolean(true), "capture_mode": String("selective"), "dedupe_bodies": Boolean(true), "gc_max_entries": Integer(5000), "gc_strategy": String("none"), "host_allowlist": Array([]), "host_denylist": Array([]), "host_overrides": Table({}), "max_entry_bytes": Integer(10485760), "max_total_bytes": Integer(0), "metadata_capture": Boolean(true), "mime_allowlist": Array([String("text/html"), String("application/json"), String("text/css"), String("application/javascript"), String("image/png")]), "mime_denylist": Array([]), "selective_body_capture": Boolean(true), "storage_mode": String("disk"), "third_party_mode": String("metadata-only")}), "directories": Table({"cache_dir": String("default"), "crash_dumps_dir": String("default"), "data_dir": String("default"), "downloads_dir": String("default"), "logs_dir": String("default"), "profiles_dir": String("default")}), "engine": Table({"alpha_mode": String("straight"), "color_space": String("srgb"), "debug_bypass_swizzle": Boolean(false), "debug_capture_dir": String("logs"), "debug_capture_next_frame": Boolean(false), "debug_frame_probe": Boolean(true), "debug_pixel_probe": Boolean(false), "debug_pointer_overlay": Boolean(false), "devtools_enabled": Boolean(false), "devtools_transport": String("none"), "enable_multiprocess": Boolean(false), "frame_pacing": String("vsync"), "gfx_backend": String("gl"), "ignore_certificate_errors": Boolean(false), "input_logging": Boolean(false), "new_window_policy": String("same-tab"), "pixel_format": String("rgba8"), "process_model": String("single-process"), "profile_isolation": Boolean(false), "render_mode": String("cpu-readback"), "resource_limits": Table({"cpu_ms": Integer(200), "max_tabs": Integer(32), "memory_mb": Integer(2048)}), "security_warnings": Boolean(true), "service_worker_policy": String("default"), "servo_source_rev": String("b73ae02"), "servo_source_tag": String("v0.0.4"), "startup_url": String("https://example.com"), "storage_policy": String("profile-scoped"), "verbose_logging": Boolean(false), "webrender_backend": String("gl"), "zoom_default": Float(1.0), "zoom_max": Float(3.0), "zoom_min": Float(0.5), "zoom_step": Float(0.10000000149011612)}), "extraction": Table({"article_processing_enabled": Boolean(false), "ontology_capture_enabled": Boolean(false), "rss_rehydration_enabled": Boolean(false)}), "features": Table({"automation_server": Boolean(true), "cache_inspector": Boolean(true), "servo_backend": Boolean(false), "shell_status_panel": Boolean(true)}), "logging": Table({"ansi": Boolean(true), "console_filter": String("info"), "file_filter": String("off"), "file_name_prefix": String("brazen.log")}), "media": Table({"auto_queue_reader_mode": Boolean(false), "default_tts_provider": String("none")}), "permissions": Table({"capabilities": Table({"ai-tool-use": String("allow"), "cache-read": String("allow"), "dom-read": String("allow"), "fs-read": String("allow"), "fs-write": String("allow"), "tab-inspect": String("allow"), "terminal-exec": String("allow"), "terminal-output-read": String("allow"), "virtual-resource-mount": String("allow")}), "default": String("allow"), "domain_overrides": Table({})}), "profiles": Table({"active_profile": String("default")}), "terminal": Table({"allowlist": Array([]), "max_args": Integer(32), "max_stderr_bytes": Integer(262144), "max_stdout_bytes": Integer(1048576), "timeout_ms": Integer(10000)}), "window": Table({"initial_height": Float(920.0), "initial_width": Float(1440.0), "min_height": Float(640.0), "min_width": Float(960.0), "show_log_panel_on_startup": Boolean(true), "show_permission_panel_on_startup": Boolean(false)})})
+[2m2026-04-21T20:43:34.186082Z[0m [32m INFO[0m [2mbrazen::logging[0m[2m:[0m tracing initialized [3mpath[0m[2m=[0m/win/linux/Code/rust/brazen/logs
+[2m2026-04-21T20:43:34.187743Z[0m [32m INFO[0m [2mbrazen[0m[2m:[0m starting brazen shell
+[2m2026-04-21T20:43:34.187793Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m audit logging initialized [3mpath[0m[2m=[0m/tmp/.tmpCLbquo/data/brazen/audit.log
+[2m2026-04-21T20:43:34.187900Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m parsing automation bind address [3mbind[0m[2m=[0mws://127.0.0.1:7942
+[2m2026-04-21T20:43:34.189569Z[0m [33m WARN[0m [2mwinit::platform_impl::linux::x11::xdisplay[0m[2m:[0m error setting XSETTINGS; Xft options won't reload automatically
+[2m2026-04-21T20:43:34.190297Z[0m [31mERROR[0m [2mbrazen::automation[0m[2m:[0m automation server failed [3merror[0m[2m=[0mautomation bind failed: Address already in use (os error 98)
+[2m2026-04-21T20:43:34.198036Z[0m [33m WARN[0m [2mwinit::platform_impl::linux::x11::util::randr[0m[2m:[0m XRandR reported that the display's 0mm in size, which is certifiably insane
+[2m2026-04-21T20:43:34.215947Z[0m [32m INFO[0m [2mwinit::platform_impl::linux::x11::window[0m[2m:[0m Guessed window scale factor: 1
+[2m2026-04-21T20:43:34.257677Z[0m [32m INFO[0m [2mbrazen::render[0m[2m:[0m render surface updated [3mviewport_width[0m[2m=[0m1280 [3mviewport_height[0m[2m=[0m720 [3mpixels_per_point[0m[2m=[0m1.0 [3mscale_factor[0m[2m=[0m100
+
+thread 'e2e_automation_roadmap_features' (348394) panicked at tests/e2e_automation.rs:130:13:
+timed out waiting for automation endpoint file: /tmp/.tmpCLbquo/endpoint.txt
+stack backtrace:
+   0:     0x5570f85aedea - std[e84040df3bd3b365]::backtrace_rs::backtrace::libunwind::trace
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
+   1:     0x5570f85aedea - std[e84040df3bd3b365]::backtrace_rs::backtrace::trace_unsynchronized::<std[e84040df3bd3b365]::sys::backtrace::_print_fmt::{closure#1}>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/../../backtrace/src/backtrace/mod.rs:66:14
+   2:     0x5570f85aedea - std[e84040df3bd3b365]::sys::backtrace::_print_fmt
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/sys/backtrace.rs:74:9
+   3:     0x5570f85aedea - <<std[e84040df3bd3b365]::sys::backtrace::BacktraceLock>::print::DisplayBacktrace as core[6c6f0f72ed298c38]::fmt::Display>::fmt
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/sys/backtrace.rs:44:26
+   4:     0x5570f85c548a - <core[6c6f0f72ed298c38]::fmt::rt::Argument>::fmt
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/core/src/fmt/rt.rs:152:76
+   5:     0x5570f85c548a - core[6c6f0f72ed298c38]::fmt::write
+   6:     0x5570f85b4f42 - std[e84040df3bd3b365]::io::default_write_fmt::<std[e84040df3bd3b365]::sys::stdio::unix::Stderr>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/io/mod.rs:639:11
+   7:     0x5570f85b4f42 - <std[e84040df3bd3b365]::sys::stdio::unix::Stderr as std[e84040df3bd3b365]::io::Write>::write_fmt
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/io/mod.rs:1994:13
+   8:     0x5570f858b31f - <std[e84040df3bd3b365]::sys::backtrace::BacktraceLock>::print
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/sys/backtrace.rs:47:9
+   9:     0x5570f858b31f - std[e84040df3bd3b365]::panicking::default_hook::{closure#0}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:292:27
+  10:     0x5570f85a60c1 - std[e84040df3bd3b365]::panicking::default_hook
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:319:9
+  11:     0x5570f85a632b - std[e84040df3bd3b365]::panicking::panic_with_hook
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:825:13
+  12:     0x5570f858b3d8 - std[e84040df3bd3b365]::panicking::panic_handler::{closure#0}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:698:13
+  13:     0x5570f85829f9 - std[e84040df3bd3b365]::sys::backtrace::__rust_end_short_backtrace::<std[e84040df3bd3b365]::panicking::panic_handler::{closure#0}, !>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/sys/backtrace.rs:182:18
+  14:     0x5570f858c2ad - __rustc[d6e935dc4dcc4704]::rust_begin_unwind
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:689:5
+  15:     0x5570f85c5d9c - core[6c6f0f72ed298c38]::panicking::panic_fmt
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/core/src/panicking.rs:80:14
+  16:     0x5570f81ad530 - e2e_automation[540532bbbab93db8]::wait_for_endpoint_file::{closure#0}
+                               at /win/linux/Code/rust/brazen/tests/e2e_automation.rs:130:13
+  17:     0x5570f81ae622 - e2e_automation[540532bbbab93db8]::e2e_automation_roadmap_features::{closure#0}
+                               at /win/linux/Code/rust/brazen/tests/e2e_automation.rs:353:54
+  18:     0x5570f81aa5a2 - <core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>> as core[6c6f0f72ed298c38]::future::future::Future>::poll
+                               at /home/admin/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/future/future.rs:133:9
+  19:     0x5570f81d504d - <tokio[d1883e85e4bace02]::runtime::park::CachedParkThread>::block_on::<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>::{closure#0}
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/park.rs:284:71
+  20:     0x5570f81d4662 - tokio[d1883e85e4bace02]::task::coop::with_budget::<core[6c6f0f72ed298c38]::task::poll::Poll<()>, <tokio[d1883e85e4bace02]::runtime::park::CachedParkThread>::block_on<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>::{closure#0}>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/task/coop/mod.rs:167:5
+  21:     0x5570f81d4662 - tokio[d1883e85e4bace02]::task::coop::budget::<core[6c6f0f72ed298c38]::task::poll::Poll<()>, <tokio[d1883e85e4bace02]::runtime::park::CachedParkThread>::block_on<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>::{closure#0}>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/task/coop/mod.rs:133:5
+  22:     0x5570f81d4662 - <tokio[d1883e85e4bace02]::runtime::park::CachedParkThread>::block_on::<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/park.rs:284:31
+  23:     0x5570f81cebd4 - <tokio[d1883e85e4bace02]::runtime::context::blocking::BlockingRegionGuard>::block_on::<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/context/blocking.rs:66:14
+  24:     0x5570f81ce788 - <tokio[d1883e85e4bace02]::runtime::scheduler::multi_thread::MultiThread>::block_on::<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>::{closure#0}
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/scheduler/multi_thread/mod.rs:89:22
+  25:     0x5570f81cb5bb - tokio[d1883e85e4bace02]::runtime::context::runtime::enter_runtime::<<tokio[d1883e85e4bace02]::runtime::scheduler::multi_thread::MultiThread>::block_on<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>::{closure#0}, ()>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/context/runtime.rs:65:16
+  26:     0x5570f81ce704 - <tokio[d1883e85e4bace02]::runtime::scheduler::multi_thread::MultiThread>::block_on::<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/scheduler/multi_thread/mod.rs:88:9
+  27:     0x5570f818de84 - <tokio[d1883e85e4bace02]::runtime::runtime::Runtime>::block_on_inner::<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/runtime.rs:373:50
+  28:     0x5570f818e07c - <tokio[d1883e85e4bace02]::runtime::runtime::Runtime>::block_on::<core[6c6f0f72ed298c38]::pin::Pin<&mut dyn core[6c6f0f72ed298c38]::future::future::Future<Output = ()>>>
+                               at /home/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.50.0/src/runtime/runtime.rs:345:18
+  29:     0x5570f818a48d - e2e_automation[540532bbbab93db8]::e2e_automation_roadmap_features
+                               at /win/linux/Code/rust/brazen/tests/e2e_automation.rs:407:52
+  30:     0x5570f81ad557 - e2e_automation[540532bbbab93db8]::e2e_automation_roadmap_features::{closure#0}
+                               at /win/linux/Code/rust/brazen/tests/e2e_automation.rs:338:43
+  31:     0x5570f81db9c6 - <e2e_automation[540532bbbab93db8]::e2e_automation_roadmap_features::{closure#0} as core[6c6f0f72ed298c38]::ops::function::FnOnce<()>>::call_once
+                               at /home/admin/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+  32:     0x5570f81f243b - <fn() -> core[6c6f0f72ed298c38]::result::Result<(), alloc[d9717d1773e7bcdb]::string::String> as core[6c6f0f72ed298c38]::ops::function::FnOnce<()>>::call_once
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/core/src/ops/function.rs:250:5
+  33:     0x5570f81f243b - test[3a506293c5536072]::__rust_begin_short_backtrace::<core[6c6f0f72ed298c38]::result::Result<(), alloc[d9717d1773e7bcdb]::string::String>, fn() -> core[6c6f0f72ed298c38]::result::Result<(), alloc[d9717d1773e7bcdb]::string::String>>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/test/src/lib.rs:663:18
+  34:     0x5570f81fee2b - test[3a506293c5536072]::run_test_in_process::{closure#0}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/test/src/lib.rs:686:74
+  35:     0x5570f81fee2b - <core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<test[3a506293c5536072]::run_test_in_process::{closure#0}> as core[6c6f0f72ed298c38]::ops::function::FnOnce<()>>::call_once
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/core/src/panic/unwind_safe.rs:274:9
+  36:     0x5570f81fee2b - std[e84040df3bd3b365]::panicking::catch_unwind::do_call::<core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<test[3a506293c5536072]::run_test_in_process::{closure#0}>, core[6c6f0f72ed298c38]::result::Result<(), alloc[d9717d1773e7bcdb]::string::String>>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:581:40
+  37:     0x5570f81fee2b - std[e84040df3bd3b365]::panicking::catch_unwind::<core[6c6f0f72ed298c38]::result::Result<(), alloc[d9717d1773e7bcdb]::string::String>, core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<test[3a506293c5536072]::run_test_in_process::{closure#0}>>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:544:19
+  38:     0x5570f81fee2b - std[e84040df3bd3b365]::panic::catch_unwind::<core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<test[3a506293c5536072]::run_test_in_process::{closure#0}>, core[6c6f0f72ed298c38]::result::Result<(), alloc[d9717d1773e7bcdb]::string::String>>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panic.rs:359:14
+  39:     0x5570f81fee2b - test[3a506293c5536072]::run_test_in_process
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/test/src/lib.rs:686:27
+  40:     0x5570f81fee2b - test[3a506293c5536072]::run_test::{closure#0}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/test/src/lib.rs:607:43
+  41:     0x5570f81fa544 - test[3a506293c5536072]::run_test::{closure#1}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/test/src/lib.rs:637:41
+  42:     0x5570f81fa544 - std[e84040df3bd3b365]::sys::backtrace::__rust_begin_short_backtrace::<test[3a506293c5536072]::run_test::{closure#1}, ()>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/sys/backtrace.rs:166:18
+  43:     0x5570f8201a42 - std[e84040df3bd3b365]::thread::lifecycle::spawn_unchecked::<test[3a506293c5536072]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/thread/lifecycle.rs:91:13
+  44:     0x5570f8201a42 - <core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<std[e84040df3bd3b365]::thread::lifecycle::spawn_unchecked<test[3a506293c5536072]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core[6c6f0f72ed298c38]::ops::function::FnOnce<()>>::call_once
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/core/src/panic/unwind_safe.rs:274:9
+  45:     0x5570f8201a42 - std[e84040df3bd3b365]::panicking::catch_unwind::do_call::<core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<std[e84040df3bd3b365]::thread::lifecycle::spawn_unchecked<test[3a506293c5536072]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:581:40
+  46:     0x5570f8201a42 - std[e84040df3bd3b365]::panicking::catch_unwind::<(), core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<std[e84040df3bd3b365]::thread::lifecycle::spawn_unchecked<test[3a506293c5536072]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panicking.rs:544:19
+  47:     0x5570f8201a42 - std[e84040df3bd3b365]::panic::catch_unwind::<core[6c6f0f72ed298c38]::panic::unwind_safe::AssertUnwindSafe<std[e84040df3bd3b365]::thread::lifecycle::spawn_unchecked<test[3a506293c5536072]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()>
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/panic.rs:359:14
+  48:     0x5570f8201a42 - std[e84040df3bd3b365]::thread::lifecycle::spawn_unchecked::<test[3a506293c5536072]::run_test::{closure#1}, ()>::{closure#1}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/thread/lifecycle.rs:89:26
+  49:     0x5570f8201a42 - <std[e84040df3bd3b365]::thread::lifecycle::spawn_unchecked<test[3a506293c5536072]::run_test::{closure#1}, ()>::{closure#1} as core[6c6f0f72ed298c38]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/core/src/ops/function.rs:250:5
+  50:     0x5570f85ae1cf - <alloc[d9717d1773e7bcdb]::boxed::Box<dyn core[6c6f0f72ed298c38]::ops::function::FnOnce<(), Output = ()> + core[6c6f0f72ed298c38]::marker::Send> as core[6c6f0f72ed298c38]::ops::function::FnOnce<()>>::call_once
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/alloc/src/boxed.rs:2206:9
+  51:     0x5570f85ae1cf - <std[e84040df3bd3b365]::sys::thread::unix::Thread>::new::thread_start
+                               at /rustc/873b4beb0cc726493b94c8ef21f68795c04fbbc1/library/std/src/sys/thread/unix.rs:118:17
+  52:     0x7f5cecdea97a - <unknown>
+  53:     0x7f5cece6e2bc - <unknown>
+  54:                0x0 - <unknown>
+test e2e_automation_roadmap_features ... FAILED
+
+failures:
+
+failures:
+    e2e_automation_roadmap_features
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 20.86s
+
+[1m[91merror[0m: test failed, to rerun pass `--test e2e_automation`

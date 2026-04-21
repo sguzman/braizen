@@ -692,6 +692,7 @@ struct AuthQuery {
 }
 
 fn run_automation_server(bind: &str, state: AutomationServerState) -> Result<(), String> {
+    tracing::info!(target: "brazen::automation", %bind, "parsing automation bind address");
     let url = Url::parse(bind).map_err(|error| format!("automation.bind invalid: {error}"))?;
     let scheme = url.scheme().to_string();
     let path = if url.path().is_empty() || url.path() == "/" {
@@ -727,33 +728,29 @@ fn run_automation_server(bind: &str, state: AutomationServerState) -> Result<(),
                 let addr: SocketAddr = format!("{host}:{port}")
                     .parse()
                     .map_err(|error| format!("invalid socket address: {error}"))?;
-                tracing::info!(
-                    target: "brazen::automation",
-                    %addr,
-                    path,
-                    "automation server listening"
-                );
+
                 let listener = tokio::net::TcpListener::bind(addr)
                     .await
                     .map_err(|error| format!("automation bind failed: {error}"))?;
+
+                let actual_addr = listener.local_addr().unwrap_or(addr);
+                tracing::info!(
+                    target: "brazen::automation",
+                    addr = %actual_addr,
+                    path,
+                    "automation server listening"
+                );
+
                 if let Ok(endpoint_file) = std::env::var("BRAZEN_AUTOMATION_ENDPOINT_FILE") {
-                    if !endpoint_file.trim().is_empty() {
-                        let local_addr = listener
-                            .local_addr()
-                            .map_err(|error| format!("automation local_addr failed: {error}"))?;
-                        let endpoint = format!(
-                            "ws://{}:{}{}",
-                            local_addr.ip(),
-                            local_addr.port(),
-                            path
-                        );
-                        let path = Path::new(&endpoint_file);
-                        if let Some(parent) = path.parent() {
-                            let _ = std::fs::create_dir_all(parent);
-                        }
-                        std::fs::write(path, endpoint.as_bytes()).map_err(|error| {
-                            format!("failed to write automation endpoint file: {error}")
-                        })?;
+                    let endpoint_url = format!("{}://{actual_addr}{path}", if scheme == "wss" { "wss" } else { "ws" });
+                    let path = Path::new(&endpoint_file);
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if let Err(error) = std::fs::write(path, endpoint_url.as_bytes()) {
+                        tracing::error!(target: "brazen::automation", %error, "failed to write endpoint file");
+                    } else {
+                        tracing::info!(target: "brazen::automation", path = %endpoint_file, url = %endpoint_url, "wrote endpoint file");
                     }
                 }
                 axum::serve(listener, router)

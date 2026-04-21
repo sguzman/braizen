@@ -114,10 +114,12 @@ fn apply_profile_overrides(config: &mut BrazenConfig, runtime_paths: &RuntimePat
     }
 
     if let Ok(settings) = db.load_automation_settings() {
-        // Overlay profile-specific automation settings while preserving enabled flag from config.
+        // Overlay profile-specific automation settings while preserving enabled flag and bind from config.
         let enabled = config.automation.enabled;
+        let bind = config.automation.bind.clone();
         config.automation = settings;
         config.automation.enabled = enabled;
+        config.automation.bind = bind;
     }
 }
 
