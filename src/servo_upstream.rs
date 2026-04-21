@@ -260,7 +260,7 @@ impl WebViewDelegate for BrazenWebViewDelegate {
                         args,
                         cwd: None,
                     };
-                    let response = crate::terminal::TerminalBroker::execute(request).await;
+                    let response = crate::terminal::TerminalBroker::execute(&crate::config::TerminalConfig::default(), request).await;
                     if let Ok(data) = serde_json::to_vec(&response) {
                         intercepted.send_body_data(data);
                     }

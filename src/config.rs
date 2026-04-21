@@ -18,6 +18,7 @@ pub struct BrazenConfig {
     pub directories: DirectoryRootsConfig,
     pub profiles: ProfileConfig,
     pub cache: CacheConfig,
+    pub terminal: TerminalConfig,
     pub permissions: PermissionPolicy,
     pub automation: AutomationConfig,
     pub extraction: ExtractionConfig,
@@ -711,6 +712,33 @@ pub struct FeatureFlags {
     pub cache_inspector: bool,
     pub automation_server: bool,
     pub servo_backend: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalConfig {
+    /// Allowed executable names (e.g. ["rg","ls"]). Empty means allow any.
+    pub allowlist: Vec<String>,
+    /// Maximum number of arguments allowed (excluding argv[0]).
+    pub max_args: usize,
+    /// Maximum stdout bytes returned.
+    pub max_stdout_bytes: usize,
+    /// Maximum stderr bytes returned.
+    pub max_stderr_bytes: usize,
+    /// Maximum runtime before the process is killed.
+    pub timeout_ms: u64,
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            allowlist: Vec::new(),
+            max_args: 32,
+            max_stdout_bytes: 1024 * 1024,
+            max_stderr_bytes: 256 * 1024,
+            timeout_ms: 10_000,
+        }
+    }
 }
 
 impl Default for FeatureFlags {

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use futures_util::{SinkExt, StreamExt};
+use base64::Engine;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use url::Url;
@@ -72,6 +73,31 @@ async fn ws_roundtrip(url: &Url, payload: serde_json::Value) -> serde_json::Valu
     serde_json::from_str(&text).expect("json response")
 }
 
+async fn snapshot(url: &Url) -> serde_json::Value {
+    ws_roundtrip(url, json!({"id":"snap","type":"snapshot"})).await
+}
+
+async fn wait_for_url(url: &Url, expected_prefix: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if Instant::now() > deadline {
+            panic!("timed out waiting for url prefix: {expected_prefix}");
+        }
+        let response = snapshot(url).await;
+        if response["ok"].as_bool().unwrap_or(false) {
+            let current = response["result"]["tabs"]
+                .as_array()
+                .and_then(|tabs| tabs.first())
+                .and_then(|tab| tab["url"].as_str())
+                .unwrap_or("");
+            if current.starts_with(expected_prefix) {
+                return;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn e2e_boot_connect_logs_and_shutdown() {
     if std::env::var("BRAZEN_E2E").ok().as_deref() != Some("1") {
@@ -97,12 +123,35 @@ async fn e2e_boot_connect_logs_and_shutdown() {
     .await;
     assert!(response["ok"].as_bool().unwrap_or(false), "log subscribe failed: {response}");
 
-    // Tab list should return an array (even if empty early).
+    // Snapshot + tab list should succeed.
+    let response = snapshot(&url).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "snapshot failed: {response}");
     let response = ws_roundtrip(&url, json!({"id":"t2","type":"tab-list"})).await;
     assert!(response["ok"].as_bool().unwrap_or(false), "tab list failed: {response}");
 
+    // Navigate to a stable data: page and wait for the url to reflect it.
+    let nav_url = "data:text/html;charset=utf-8,<html><body><h1>E2E</h1></body></html>";
+    let response = ws_roundtrip(&url, json!({"id":"t3","type":"tab-navigate","url":nav_url})).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "tab navigate failed: {response}");
+    wait_for_url(&url, "data:text/html").await;
+
+    // DOM query returns non-empty outerHTML.
+    let response = ws_roundtrip(&url, json!({"id":"t4","type":"dom-query","selector":"body"})).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "dom query failed: {response}");
+    let dom = response["result"].as_str().unwrap_or("");
+    assert!(!dom.trim().is_empty(), "expected non-empty dom");
+
+    // Screenshot returns base64 PNG which should decode to non-empty bytes.
+    let response = ws_roundtrip(&url, json!({"id":"t5","type":"screenshot"})).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "screenshot failed: {response}");
+    let b64 = response["result"].as_str().unwrap_or("");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .expect("base64 decode");
+    assert!(bytes.len() > 32, "expected png bytes");
+
     // Request shutdown and ensure process exits.
-    let response = ws_roundtrip(&url, json!({"id":"t3","type":"shutdown"})).await;
+    let response = ws_roundtrip(&url, json!({"id":"t6","type":"shutdown"})).await;
     assert!(response["ok"].as_bool().unwrap_or(false), "shutdown failed: {response}");
 
     let status = tokio::task::spawn_blocking(move || {

@@ -195,6 +195,11 @@ pub enum AutomationRequest {
     EvaluateJavascript {
         script: String,
     },
+    TerminalExec {
+        cmd: String,
+        args: Vec<String>,
+        cwd: Option<String>,
+    },
     Shutdown,
 }
 
@@ -248,6 +253,7 @@ pub struct AutomationHandle {
     permissions: PermissionPolicy,
     expose_tab_api: bool,
     expose_cache_api: bool,
+    terminal_config: crate::config::TerminalConfig,
     pub mount_manager: crate::mounts::MountManager,
     activity_counter: Arc<AtomicU64>,
     egui_ctx: Arc<RwLock<Option<eframe::egui::Context>>>,
@@ -358,6 +364,7 @@ pub fn start_automation_runtime(
         permissions: config.permissions.clone(),
         expose_tab_api: config.automation.expose_tab_api,
         expose_cache_api: config.automation.expose_cache_api,
+        terminal_config: config.terminal.clone(),
         mount_manager,
         activity_counter: Arc::new(AtomicU64::new(0)),
         egui_ctx: Arc::new(RwLock::new(None)),
@@ -945,6 +952,22 @@ async fn handle_request(
                 Ok(Err(error)) => Some(error_response(id, &error)),
                 Err(_) => Some(error_response(id, "internal error")),
             }
+        }
+        AutomationRequest::TerminalExec { cmd, args, cwd } => {
+            if let Err(error) = state.check_permission(Capability::TerminalExec) {
+                return Some(error_response(id, &error));
+            }
+            let request = crate::terminal::TerminalRequest { cmd, args, cwd };
+            let response = crate::terminal::TerminalBroker::execute(&state.handle.terminal_config, request).await;
+            Some(
+                serde_json::to_string(&AutomationResponse {
+                    id,
+                    ok: response.success,
+                    result: Some(response),
+                    error: None,
+                })
+                .unwrap(),
+            )
         }
         AutomationRequest::Shutdown => {
             let result = state.handle.request_shutdown();

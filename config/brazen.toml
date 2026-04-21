@@ -115,6 +115,14 @@ cache-read = "ask"
 tab-inspect = "ask"
 ai-tool-use = "ask"
 
+[terminal]
+# allowlist = ["rg", "ls", "cat", "echo"]
+allowlist = []
+max_args = 32
+max_stdout_bytes = 1048576
+max_stderr_bytes = 262144
+timeout_ms = 10000
+
 [automation]
 enabled = false
 bind = "ws://127.0.0.1:7942"

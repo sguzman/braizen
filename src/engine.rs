@@ -448,10 +448,10 @@ impl BrowserEngine for NullEngine {
         self.active_tab.current_url = url.to_string();
         self.navigation_state.url = url.to_string();
         self.navigation_state.redirect_chain = vec![url.to_string()];
-        self.navigation_state.title = "Loading...".to_string();
-        self.navigation_state.load_progress = 0.1;
-        self.navigation_state.document_ready = false;
-        self.navigation_state.load_status = Some(EngineLoadStatus::Started);
+        self.navigation_state.title = "NullEngine".to_string();
+        self.navigation_state.load_progress = 1.0;
+        self.navigation_state.document_ready = true;
+        self.navigation_state.load_status = Some(EngineLoadStatus::Complete);
         if self.active_tab.current_url != "about:blank" {
             self.navigation_state.can_go_back = true;
         }
@@ -587,7 +587,27 @@ impl BrowserEngine for NullEngine {
     }
 
     fn evaluate_javascript(&mut self, script: String, callback: Box<dyn FnOnce(Result<serde_json::Value, String>) + Send + 'static>) {
-        callback(Ok(serde_json::Value::String(format!("NullEngine evaluated: {}", script))));
+        // Provide stable responses for automation/e2e tests without a real JS runtime.
+        // Supports:
+        // - document.querySelector('<selector>') ... outerHTML
+        // - otherwise returns a string echo
+        if let Some(selector) = script
+            .split("document.querySelector('")
+            .nth(1)
+            .and_then(|rest| rest.split("')").next())
+        {
+            let html = if selector == "body" {
+                "<body><h1>Brazen NullEngine</h1><p>automation</p></body>".to_string()
+            } else {
+                format!("<mock selector=\"{selector}\"></mock>")
+            };
+            callback(Ok(serde_json::Value::String(html)));
+            return;
+        }
+
+        callback(Ok(serde_json::Value::String(format!(
+            "NullEngine evaluated: {script}"
+        ))));
     }
 
     fn take_screenshot(&mut self) -> Result<EngineFrame, String> {
