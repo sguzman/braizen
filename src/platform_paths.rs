@@ -23,6 +23,7 @@ pub struct RuntimePaths {
     pub crash_dumps_dir: PathBuf,
     pub active_profile_dir: PathBuf,
     pub session_path: PathBuf,
+    pub audit_log_path: PathBuf,
 }
 
 #[derive(Debug, Error)]
@@ -91,6 +92,7 @@ impl PlatformPaths {
         let crash_dumps_dir = self.resolve_dir(&base_dir, &data_dir, &dirs.crash_dumps_dir);
         let active_profile_dir = profiles_dir.join(&config.profiles.active_profile);
         let session_path = active_profile_dir.join("session.json");
+        let audit_log_path = data_dir.join("audit.log");
 
         Ok(RuntimePaths {
             config_path: config_path.to_path_buf(),
@@ -102,6 +104,7 @@ impl PlatformPaths {
             crash_dumps_dir,
             active_profile_dir,
             session_path,
+            audit_log_path,
         })
     }
 

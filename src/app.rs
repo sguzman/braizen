@@ -2691,6 +2691,9 @@ impl eframe::App for BrazenApp {
         self.forward_input_events(ctx);
         self.update_render_frame(ctx);
         self.shell_state.sync_from_engine(self.engine.as_mut());
+        if let Some(handle) = &self.automation_handle {
+            handle.set_egui_context(ctx.clone());
+        }
         self.update_automation();
         self.update_render_health();
         self.apply_ui_settings(ctx);

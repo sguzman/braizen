@@ -361,7 +361,7 @@ pub trait BrowserEngine {
     fn inject_event(&mut self, event: EngineEvent);
     fn take_events(&mut self) -> Vec<EngineEvent>;
     fn evaluate_javascript(&mut self, script: String, callback: Box<dyn FnOnce(Result<serde_json::Value, String>) + Send + 'static>);
-    fn take_screenshot(&mut self) -> Result<Vec<u8>, String>;
+    fn take_screenshot(&mut self) -> Result<EngineFrame, String>;
     fn health(&self) -> RenderHealth;
 }
 
@@ -586,12 +586,30 @@ impl BrowserEngine for NullEngine {
         std::mem::take(&mut self.events)
     }
 
-    fn evaluate_javascript(&mut self, _script: String, callback: Box<dyn FnOnce(Result<serde_json::Value, String>) + Send + 'static>) {
-        callback(Err("NullEngine does not support JavaScript".to_string()));
+    fn evaluate_javascript(&mut self, script: String, callback: Box<dyn FnOnce(Result<serde_json::Value, String>) + Send + 'static>) {
+        callback(Ok(serde_json::Value::String(format!("NullEngine evaluated: {}", script))));
     }
 
-    fn take_screenshot(&mut self) -> Result<Vec<u8>, String> {
-        Err("NullEngine does not support screenshots".to_string())
+    fn take_screenshot(&mut self) -> Result<EngineFrame, String> {
+        let width = 100;
+        let height = 100;
+        let mut pixels = Vec::with_capacity(width * height * 4);
+        for _ in 0..(width * height) {
+            pixels.push(0);   // R
+            pixels.push(0);   // G
+            pixels.push(255); // B
+            pixels.push(255); // A
+        }
+        Ok(EngineFrame {
+            width: width as u32,
+            height: height as u32,
+            frame_number: 0,
+            stride_bytes: width * 4,
+            pixel_format: PixelFormat::Rgba8,
+            alpha_mode: AlphaMode::Straight,
+            color_space: ColorSpace::Srgb,
+            pixels,
+        })
     }
 }
 use std::sync::{Arc, RwLock};
@@ -1057,9 +1075,8 @@ impl BrowserEngine for ServoEngine {
         self.embedder.evaluate_javascript(script, callback);
     }
 
-    fn take_screenshot(&mut self) -> Result<Vec<u8>, String> {
+    fn take_screenshot(&mut self) -> Result<EngineFrame, String> {
         self.embedder.render_frame()
-            .map(|f| f.pixels)
             .ok_or_else(|| "No frame available".to_string())
     }
 }

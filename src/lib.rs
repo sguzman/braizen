@@ -20,6 +20,7 @@ pub mod mounts;
 pub mod session;
 pub mod terminal;
 pub mod tls;
+pub mod audit_log;
 
 use std::path::{Path, PathBuf};
 

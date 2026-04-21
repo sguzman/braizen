@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Local, Utc};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,6 +15,7 @@ use tokio::sync::{Semaphore, broadcast, mpsc};
 use std::collections::VecDeque;
 use url::Url;
 
+use crate::audit_log::{AuditLogger, AuditEntry};
 use crate::cache::{AssetMetadata, AssetQuery, AssetStore, CacheStats};
 use crate::config::{AutomationConfig, BrazenConfig, CacheConfig};
 use crate::engine::EngineLoadStatus;
@@ -23,6 +24,9 @@ use crate::platform_paths::RuntimePaths;
 use crate::session::SessionSnapshot;
 use crate::{ShellState, commands};
 use base64::Engine;
+use crate::engine::{EngineFrame, PixelFormat};
+use image::ImageFormat;
+use std::io::Cursor;
 
 #[derive(Debug, Clone)]
 pub struct AutomationSnapshot {
@@ -187,6 +191,9 @@ pub enum AutomationRequest {
         name: String,
     },
     MountList,
+    EvaluateJavascript {
+        script: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,7 +219,11 @@ pub enum AutomationCommand {
         response_tx: tokio::sync::oneshot::Sender<Result<serde_json::Value, String>>,
     },
     Screenshot {
-        response_tx: tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>,
+        response_tx: tokio::sync::oneshot::Sender<Result<EngineFrame, String>>,
+    },
+    EvaluateJavascript {
+        script: String,
+        response_tx: tokio::sync::oneshot::Sender<Result<serde_json::Value, String>>,
     },
     AddMount {
         name: String,
@@ -237,9 +248,20 @@ pub struct AutomationHandle {
     expose_cache_api: bool,
     pub mount_manager: crate::mounts::MountManager,
     activity_counter: Arc<AtomicU64>,
+    egui_ctx: Arc<RwLock<Option<eframe::egui::Context>>>,
 }
 
 impl AutomationHandle {
+    pub fn set_egui_context(&self, ctx: eframe::egui::Context) {
+        let mut lock = self.egui_ctx.write().expect("egui ctx lock");
+        *lock = Some(ctx);
+    }
+
+    pub fn request_repaint(&self) {
+        if let Some(ctx) = self.egui_ctx.read().expect("egui ctx lock").as_ref() {
+            ctx.request_repaint();
+        }
+    }
     pub fn snapshot(&self) -> AutomationSnapshot {
         self.snapshot.read().expect("automation snapshot lock").clone()
     }
@@ -310,9 +332,8 @@ pub fn start_automation_runtime(
     }
     let (command_tx, command_rx) = mpsc::unbounded_channel();
     let (event_tx, _) = broadcast::channel(config.automation.max_subscriptions.max(16) as usize);
-    let snapshot = Arc::new(RwLock::new(AutomationSnapshot::default()));
     let handle = AutomationHandle {
-        snapshot: snapshot.clone(),
+        snapshot: Arc::new(RwLock::new(AutomationSnapshot::default())),
         command_tx,
         event_tx,
         cache_config: config.cache.clone(),
@@ -323,8 +344,11 @@ pub fn start_automation_runtime(
         expose_cache_api: config.automation.expose_cache_api,
         mount_manager,
         activity_counter: Arc::new(AtomicU64::new(0)),
+        egui_ctx: Arc::new(RwLock::new(None)),
     };
-    let server_state = AutomationServerState::new(config.automation.clone(), handle.clone());
+    let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+    tracing::info!(target: "brazen::automation", path = %paths.audit_log_path.display(), "audit logging initialized");
+    let server_state = AutomationServerState::new(config.automation.clone(), handle.clone(), audit_logger);
     let bind = config.automation.bind.clone();
     std::thread::spawn(move || {
         if let Err(error) = run_automation_server(&bind, server_state) {
@@ -343,10 +367,11 @@ struct AutomationServerState {
     max_messages_per_minute: u32,
     max_subscriptions: usize,
     connection_semaphore: Arc<Semaphore>,
+    audit_logger: Arc<AuditLogger>,
 }
 
 impl AutomationServerState {
-    fn new(config: AutomationConfig, handle: AutomationHandle) -> Self {
+    fn new(config: AutomationConfig, handle: AutomationHandle, audit_logger: Arc<AuditLogger>) -> Self {
         let max_connections = config.max_connections.max(1) as usize;
         Self {
             handle,
@@ -355,6 +380,7 @@ impl AutomationServerState {
             max_messages_per_minute: config.max_messages_per_minute.max(1),
             max_subscriptions: config.max_subscriptions.max(1) as usize,
             connection_semaphore: Arc::new(Semaphore::new(max_connections)),
+            audit_logger,
         }
     }
 
@@ -490,19 +516,25 @@ async fn ws_handler(
         }
     }
 
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.to_string());
+
     let permit = state
         .connection_semaphore
         .clone()
         .acquire_owned()
         .await
         .expect("semaphore");
-    ws.on_upgrade(move |socket| handle_socket(socket, state, permit))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, permit, user_agent))
 }
 
 async fn handle_socket(
     mut socket: WebSocket,
     state: AutomationServerState,
     _permit: tokio::sync::OwnedSemaphorePermit,
+    user_agent: Option<String>,
 ) {
     let mut receiver = state.handle.event_tx.subscribe();
     let mut log_receiver = crate::logging::get_log_receiver();
@@ -556,7 +588,7 @@ async fn handle_socket(
                     break;
                 }
                 if let Message::Text(text) = message {
-                    let response = handle_request(&state, &text, &mut subscribed_topics).await;
+                    let response = handle_request(&state, &text, &mut subscribed_topics, user_agent.clone(), None).await;
                     if let Some(response) = response
                         && socket.send(Message::Text(response.into())).await.is_err()
                     {
@@ -572,6 +604,8 @@ async fn handle_request(
     state: &AutomationServerState,
     raw: &str,
     subscribed_topics: &mut Vec<String>,
+    user_agent: Option<String>,
+    client_ip: Option<String>,
 ) -> Option<String> {
     let parsed: Result<AutomationEnvelope<AutomationRequest>, _> = serde_json::from_str(raw);
     let Ok(envelope) = parsed else {
@@ -586,7 +620,7 @@ async fn handle_request(
         );
     };
     let id = envelope.id.clone();
-    let command_name = format!("{:?}", envelope.payload).split('(').next().unwrap_or("unknown").to_string();
+    let command_name = format!("{:?}", envelope.payload);
     let activity_id = id.clone().unwrap_or_else(|| {
         let count = state.handle.activity_counter.fetch_add(1, Ordering::SeqCst);
         format!("auto-{}", count)
@@ -594,13 +628,23 @@ async fn handle_request(
 
     tracing::info!(target: "brazen::automation", id, "handling automation request: {}", command_name);
 
+    let audit_entry = AuditEntry {
+        timestamp: Utc::now(),
+        command: command_name.clone(),
+        user_agent: user_agent.clone(),
+        client_ip: client_ip.clone(),
+        outcome: "pending".to_string(),
+    };
+
     state.handle.record_activity(AutomationActivity {
         id: activity_id.clone(),
-        command: command_name,
+        command: command_name.clone(),
         status: AutomationActivityStatus::Running,
         timestamp: Local::now().format("%H:%M:%S").to_string(),
         output: None,
     });
+
+    state.handle.request_repaint();
 
     let response = match envelope.payload {
         AutomationRequest::WindowList => {
@@ -747,15 +791,55 @@ async fn handle_request(
                 .command_tx
                 .send(AutomationCommand::Screenshot { response_tx: tx });
             match rx.await {
-                Ok(Ok(pixels)) => {
-                    let encoded = base64::engine::general_purpose::STANDARD.encode(&pixels);
-                    let response = AutomationResponse {
-                        id,
-                        ok: true,
-                        result: Some(encoded),
-                        error: None,
+                Ok(Ok(frame)) => {
+                    let mut png_data = Vec::new();
+                    let mut cursor = Cursor::new(&mut png_data);
+                    
+                    let result: Result<(), String> = match frame.pixel_format {
+                        PixelFormat::Rgba8 => {
+                            let img_opt = image::RgbaImage::from_raw(frame.width, frame.height, frame.pixels);
+                            if let Some(img) = img_opt {
+                                match img.write_to(&mut cursor, ImageFormat::Png) {
+                                    Ok(_) => Ok(()),
+                                    Err(e) => Err(e.to_string()),
+                                }
+                            } else {
+                                Err("Failed to create image from raw pixels".to_string())
+                            }
+                        }
+                        PixelFormat::Bgra8 => {
+                            let mut rgba_pixels = Vec::with_capacity(frame.pixels.len());
+                            for chunk in frame.pixels.chunks_exact(4) {
+                                rgba_pixels.push(chunk[2]); // R
+                                rgba_pixels.push(chunk[1]); // G
+                                rgba_pixels.push(chunk[0]); // B
+                                rgba_pixels.push(chunk[3]); // A
+                            }
+                            let img_opt = image::RgbaImage::from_raw(frame.width, frame.height, rgba_pixels);
+                            if let Some(img) = img_opt {
+                                match img.write_to(&mut cursor, ImageFormat::Png) {
+                                    Ok(_) => Ok(()),
+                                    Err(e) => Err(e.to_string()),
+                                }
+                            } else {
+                                Err("Failed to create image from raw pixels".to_string())
+                            }
+                        }
                     };
-                    Some(serde_json::to_string(&response).unwrap())
+
+                    match result {
+                        Ok(_) => {
+                            let encoded = base64::engine::general_purpose::STANDARD.encode(&png_data);
+                            let response = AutomationResponse {
+                                id,
+                                ok: true,
+                                result: Some(encoded),
+                                error: None,
+                            };
+                            Some(serde_json::to_string(&response).unwrap())
+                        }
+                        Err(error) => Some(error_response(id, &error)),
+                    }
                 }
                 Ok(Err(error)) => Some(error_response(id, &error)),
                 Err(_) => Some(error_response(id, "internal error")),
@@ -795,6 +879,26 @@ async fn handle_request(
                 error: None,
             };
             Some(serde_json::to_string(&response).unwrap())
+        }
+        AutomationRequest::EvaluateJavascript { script } => {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = state
+                .handle
+                .command_tx
+                .send(AutomationCommand::EvaluateJavascript { script, response_tx: tx });
+            match rx.await {
+                Ok(Ok(result)) => {
+                    let response = AutomationResponse {
+                        id,
+                        ok: true,
+                        result: Some(result),
+                        error: None,
+                    };
+                    Some(serde_json::to_string(&response).unwrap())
+                }
+                Ok(Err(error)) => Some(error_response(id, &error)),
+                Err(_) => Some(error_response(id, "internal error")),
+            }
         }
         AutomationRequest::CacheStats => {
             if let Err(error) = ensure_cache_api(state) {
@@ -903,6 +1007,10 @@ async fn handle_request(
                 activity.status = if res_parsed.ok { AutomationActivityStatus::Success } else { AutomationActivityStatus::Failed };
                 activity.output = res_parsed.error.clone();
             }
+
+            let mut final_audit = audit_entry.clone();
+            final_audit.outcome = if res_parsed.ok { "success".to_string() } else { res_parsed.error.clone().unwrap_or_else(|| "failed".to_string()) };
+            let _ = state.audit_logger.log(final_audit);
         }
     }
 
@@ -1143,6 +1251,14 @@ pub fn drain_automation_commands(
             }
             AutomationCommand::Screenshot { response_tx } => {
                 let _ = response_tx.send(engine.take_screenshot());
+            }
+            AutomationCommand::EvaluateJavascript { script, response_tx } => {
+                engine.evaluate_javascript(
+                    script,
+                    Box::new(|result| {
+                        let _ = response_tx.send(result);
+                    }),
+                );
             }
         }
     }

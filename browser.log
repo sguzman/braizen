@@ -1,0 +1,10 @@
+[2m2026-04-21T11:00:10.478142Z[0m [32m INFO[0m [2mbrazen::logging[0m[2m:[0m tracing initialized [3mpath[0m[2m=[0m/win/linux/Code/rust/brazen/logs
+[2m2026-04-21T11:00:10.478353Z[0m [32m INFO[0m [2mbrazen[0m[2m:[0m starting brazen shell
+[2m2026-04-21T11:00:10.479706Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m automation server listening [3maddr[0m[2m=[0m127.0.0.1:7942 [3mpath[0m[2m=[0m"/ws"
+[2m2026-04-21T11:00:10.619974Z[0m [32m INFO[0m [2mbrazen::render[0m[2m:[0m render surface updated [3mviewport_width[0m[2m=[0m1440 [3mviewport_height[0m[2m=[0m920 [3mpixels_per_point[0m[2m=[0m1.0 [3mscale_factor[0m[2m=[0m100
+[2m2026-04-21T11:00:13.481739Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m handling automation request: WindowList [3mid[0m[2m=[0m"cli-windows"
+[2m2026-04-21T11:00:13.486924Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m handling automation request: TabList [3mid[0m[2m=[0m"cli-tabs"
+[2m2026-04-21T11:00:13.491835Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m handling automation request: DomQuery { selector: "body" } [3mid[0m[2m=[0m"cli-dom"
+[2m2026-04-21T11:04:28.069800Z[0m [33m WARN[0m [2mbrazen::render[0m[2m:[0m load status stuck at Started for 10s
+[2m2026-04-21T11:04:28.076120Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m handling automation request: Screenshot [3mid[0m[2m=[0m"cli-screenshot"
+[2m2026-04-21T11:04:28.110294Z[0m [32m INFO[0m [2mbrazen::automation[0m[2m:[0m handling automation request: LogSubscribe [3mid[0m[2m=[0m"cli-logs"

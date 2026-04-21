@@ -47,6 +47,11 @@ pub enum IntrospectCommand {
         #[arg(short, long)]
         follow: bool,
     },
+    /// Evaluate JavaScript in the active tab
+    EvaluateJs {
+        /// JavaScript code to execute
+        script: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,6 +69,7 @@ enum AutomationRequest {
     TabList,
     DomQuery { selector: String },
     Screenshot,
+    EvaluateJavascript { script: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -198,6 +204,24 @@ pub async fn run_introspect_cli(args: &[String]) -> Result<(), Box<dyn std::erro
                     }
                 }
                 if !follow { break; }
+            }
+        }
+        IntrospectCommand::EvaluateJs { script } => {
+            let request = AutomationEnvelope {
+                id: Some("cli-eval-js".to_string()),
+                payload: AutomationRequest::EvaluateJavascript { script },
+            };
+            write.send(Message::Text(serde_json::to_string(&request)?.into())).await?;
+            
+            if let Some(Ok(Message::Text(text))) = read.next().await {
+                let response: AutomationResponse<serde_json::Value> = serde_json::from_str(&text)?;
+                if response.ok {
+                    if let Some(result) = response.result {
+                        println!("{}", serde_json::to_string_pretty(&result)?);
+                    }
+                } else {
+                    eprintln!("Error: {}", response.error.unwrap_or_else(|| "Unknown error".to_string()));
+                }
             }
         }
     }
