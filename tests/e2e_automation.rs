@@ -255,6 +255,20 @@ async fn e2e_boot_connect_logs_and_shutdown() {
     let response = ws_roundtrip(&url, json!({"id":"rq3","type":"reading-remove","url":"https://example.com/"})).await;
     assert!(response["ok"].as_bool().unwrap_or(false), "reading remove failed: {response}");
 
+    // Reader mode: open/close surface backed by reading queue item with article_text.
+    let response = ws_roundtrip(&url, json!({"id":"rq4","type":"reading-enqueue","url":"https://example.com/article","title":"Article","kind":"article","article_text":"Hello article"})).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "reading enqueue article failed: {response}");
+    let response = ws_roundtrip(&url, json!({"id":"rm1","type":"reader-mode-open","url":"https://example.com/article"})).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "reader-mode-open failed: {response}");
+    let response = snapshot(&url).await;
+    assert!(response["result"]["reader_mode_open"].as_bool().unwrap_or(false));
+    assert_eq!(response["result"]["reader_mode_source_url"].as_str().unwrap_or(""), "https://example.com/article");
+    assert!(response["result"]["reader_mode_text_len"].as_u64().unwrap_or(0) > 0);
+    let response = ws_roundtrip(&url, json!({"id":"rm2","type":"reader-mode-close"})).await;
+    assert!(response["ok"].as_bool().unwrap_or(false), "reader-mode-close failed: {response}");
+    let response = snapshot(&url).await;
+    assert!(!response["result"]["reader_mode_open"].as_bool().unwrap_or(true));
+
     // Screenshot-meta returns base64 PNG + dimensions.
     let response = ws_roundtrip(&url, json!({"id":"t5","type":"screenshot-meta"})).await;
     assert!(response["ok"].as_bool().unwrap_or(false), "screenshot failed: {response}");

@@ -1986,8 +1986,8 @@ id = "media-reading-and-tts.md:15:23221a019e"
 file = "media-reading-and-tts.md"
 line = 15
 text = "Reader mode surface"
-status = "planned"
-tests = []
+status = "done"
+tests = ["e2e_automation::e2e_boot_connect_logs_and_shutdown"]
 planned_tests = ["todo::23221a019e"]
 
 [[item]]

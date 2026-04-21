@@ -72,6 +72,9 @@ pub struct ShellState {
     pub tts_queue: VecDeque<String>,
     pub tts_playing: bool,
     pub reading_queue: VecDeque<ReadingQueueItem>,
+    pub reader_mode_open: bool,
+    pub reader_mode_source_url: Option<String>,
+    pub reader_mode_text: String,
     pub mount_manager: crate::mounts::MountManager,
     pub runtime_paths: RuntimePaths,
     pub pending_window_screenshot: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<crate::engine::EngineFrame, String>>>>>,
@@ -349,6 +352,9 @@ pub fn build_shell_state(
         tts_queue: VecDeque::new(),
         tts_playing: false,
         reading_queue: VecDeque::new(),
+        reader_mode_open: false,
+        reader_mode_source_url: None,
+        reader_mode_text: String::new(),
         mount_manager: crate::mounts::MountManager::new(),
         runtime_paths: paths.clone(),
         pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
@@ -486,6 +492,7 @@ struct WorkspacePanels {
     engine_health: bool,
     knowledge_graph: bool,
     reading_queue: bool,
+    reader_mode: bool,
     tts_controls: bool,
     workspace_settings: bool,
 }
@@ -505,6 +512,7 @@ impl Default for WorkspacePanels {
             engine_health: false,
             knowledge_graph: false,
             reading_queue: false,
+            reader_mode: false,
             tts_controls: false,
             workspace_settings: false,
         }
@@ -1944,6 +1952,7 @@ impl BrazenApp {
                 network_inspector: false,
                 knowledge_graph: false,
                 reading_queue: false,
+                reader_mode: false,
                 tts_controls: false,
                 bookmarks: false,
                 history: false,
@@ -1961,6 +1970,7 @@ impl BrazenApp {
                 engine_health: true,
                 knowledge_graph: false,
                 reading_queue: false,
+                reader_mode: false,
                 tts_controls: false,
                 bookmarks: false,
                 history: true,
@@ -1976,6 +1986,7 @@ impl BrazenApp {
                 network_inspector: false,
                 knowledge_graph: true,
                 reading_queue: true,
+                reader_mode: true,
                 tts_controls: true,
                 bookmarks: true,
                 history: true,
@@ -2069,6 +2080,9 @@ impl BrazenApp {
                     .changed();
                 changed |= ui
                     .checkbox(&mut self.panels.reading_queue, "Reading queue")
+                    .changed();
+                changed |= ui
+                    .checkbox(&mut self.panels.reader_mode, "Reader mode")
                     .changed();
                 changed |= ui
                     .checkbox(&mut self.panels.tts_controls, "TTS controls")
@@ -2452,11 +2466,20 @@ impl BrazenApp {
                 ui.separator();
                 eframe::egui::ScrollArea::vertical().show(ui, |ui| {
                     let mut remove_index: Option<usize> = None;
+                    let mut open_reader: Option<(String, String)> = None;
                     for (idx, item) in self.shell_state.reading_queue.iter_mut().enumerate() {
                         ui.group(|ui| {
                             ui.horizontal(|ui| {
                                 ui.label(item.kind.clone());
                                 ui.monospace(&item.url);
+                                if ui.button("Open Reader").clicked() {
+                                    open_reader = Some((
+                                        item.url.clone(),
+                                        item.article_text
+                                            .clone()
+                                            .unwrap_or_else(|| "No article text available.".to_string()),
+                                    ));
+                                }
                                 if ui.button("Remove").clicked() {
                                     remove_index = Some(idx);
                                 }
@@ -2479,10 +2502,54 @@ impl BrazenApp {
                         let _ = self.shell_state.reading_queue.remove(idx);
                         self.shell_state.record_event("reading: remove");
                     }
+                    if let Some((url, text)) = open_reader {
+                        self.shell_state.reader_mode_open = true;
+                        self.shell_state.reader_mode_source_url = Some(url);
+                        self.shell_state.reader_mode_text = text;
+                        self.shell_state.record_event("reader: open");
+                    }
                 });
             });
         if !open {
             self.panels.reading_queue = false;
+        }
+    }
+
+    fn render_reader_mode_panel(&mut self, ctx: &eframe::egui::Context) {
+        if !self.panels.reader_mode {
+            return;
+        }
+        let mut open = true;
+        eframe::egui::Window::new("Reader Mode")
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(format!(
+                        "Source: {}",
+                        self.shell_state
+                            .reader_mode_source_url
+                            .as_deref()
+                            .unwrap_or("(none)")
+                    ));
+                    if ui.button("Close").clicked() {
+                        self.shell_state.reader_mode_open = false;
+                        self.shell_state.reader_mode_source_url = None;
+                        self.shell_state.reader_mode_text.clear();
+                        self.shell_state.record_event("reader: close");
+                    }
+                });
+                ui.separator();
+                if !self.shell_state.reader_mode_open {
+                    ui.label("Reader mode is not open.");
+                    return;
+                }
+                ui.add(
+                    eframe::egui::TextEdit::multiline(&mut self.shell_state.reader_mode_text)
+                        .desired_rows(24),
+                );
+            });
+        if !open {
+            self.panels.reader_mode = false;
         }
     }
 
@@ -3311,6 +3378,7 @@ impl eframe::App for BrazenApp {
         self.render_engine_health_panel(ctx);
         self.render_knowledge_graph_panel(ctx);
         self.render_reading_queue_panel(ctx);
+        self.render_reader_mode_panel(ctx);
         self.render_tts_controls_panel(ctx);
 
         if self.shell_state.log_panel_open {
@@ -3583,6 +3651,9 @@ mod tests {
             tts_queue: VecDeque::new(),
             tts_playing: false,
             reading_queue: VecDeque::new(),
+            reader_mode_open: false,
+            reader_mode_source_url: None,
+            reader_mode_text: String::new(),
             runtime_paths: paths,
             mount_manager: crate::mounts::MountManager::new(),
             pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
@@ -3684,6 +3755,9 @@ mod tests {
             tts_queue: VecDeque::new(),
             tts_playing: false,
             reading_queue: VecDeque::new(),
+            reader_mode_open: false,
+            reader_mode_source_url: None,
+            reader_mode_text: String::new(),
             runtime_paths: paths,
             mount_manager: crate::mounts::MountManager::new(),
             pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),

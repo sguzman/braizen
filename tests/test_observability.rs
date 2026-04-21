@@ -99,6 +99,9 @@ fn create_mock_shell_state() -> ShellState {
         tts_queue: std::collections::VecDeque::new(),
         tts_playing: false,
         reading_queue: std::collections::VecDeque::new(),
+        reader_mode_open: false,
+        reader_mode_source_url: None,
+        reader_mode_text: String::new(),
         mount_manager: MountManager::new(),
         runtime_paths: RuntimePaths {
             config_path: root.join("brazen.toml"),

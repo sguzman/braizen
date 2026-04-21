@@ -60,6 +60,9 @@ pub struct AutomationSnapshot {
     pub tts_playing: bool,
     pub reading_queue_len: usize,
     pub reading_queue_urls: Vec<String>,
+    pub reader_mode_open: bool,
+    pub reader_mode_source_url: Option<String>,
+    pub reader_mode_text_len: usize,
 }
 
 impl Default for AutomationSnapshot {
@@ -98,6 +101,9 @@ impl Default for AutomationSnapshot {
             tts_playing: false,
             reading_queue_len: 0,
             reading_queue_urls: Vec::new(),
+            reader_mode_open: false,
+            reader_mode_source_url: None,
+            reader_mode_text_len: 0,
         }
     }
 }
@@ -244,6 +250,10 @@ pub enum AutomationRequest {
         url: String,
     },
     ReadingClear,
+    ReaderModeOpen {
+        url: String,
+    },
+    ReaderModeClose,
     MountAdd {
         name: String,
         local_path: String,
@@ -376,6 +386,13 @@ pub enum AutomationCommand {
     ReadingClear {
         response_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
     },
+    ReaderModeOpen {
+        url: String,
+        response_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
+    ReaderModeClose {
+        response_tx: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
     InteractDom {
         selector: String,
         event: String,
@@ -489,6 +506,9 @@ impl AutomationHandle {
             .take(16)
             .map(|item| item.url.clone())
             .collect();
+        snapshot.reader_mode_open = shell_state.reader_mode_open;
+        snapshot.reader_mode_source_url = shell_state.reader_mode_source_url.clone();
+        snapshot.reader_mode_text_len = shell_state.reader_mode_text.len();
     }
 
     pub fn publish_navigation(&self, event: AutomationNavigationEvent) {
@@ -1328,6 +1348,30 @@ async fn handle_request(
                 .handle
                 .command_tx
                 .send(AutomationCommand::ReadingClear { response_tx: tx });
+            match rx.await {
+                Ok(Ok(_)) => Some(ok_response(id)),
+                Ok(Err(error)) => Some(error_response(id, &error)),
+                Err(_) => Some(error_response(id, "internal error")),
+            }
+        }
+        AutomationRequest::ReaderModeOpen { url } => {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = state
+                .handle
+                .command_tx
+                .send(AutomationCommand::ReaderModeOpen { url, response_tx: tx });
+            match rx.await {
+                Ok(Ok(_)) => Some(ok_response(id)),
+                Ok(Err(error)) => Some(error_response(id, &error)),
+                Err(_) => Some(error_response(id, "internal error")),
+            }
+        }
+        AutomationRequest::ReaderModeClose => {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = state
+                .handle
+                .command_tx
+                .send(AutomationCommand::ReaderModeClose { response_tx: tx });
             match rx.await {
                 Ok(Ok(_)) => Some(ok_response(id)),
                 Ok(Err(error)) => Some(error_response(id, &error)),
@@ -2549,6 +2593,27 @@ pub fn drain_automation_commands(
             AutomationCommand::ReadingClear { response_tx } => {
                 shell_state.reading_queue.clear();
                 shell_state.record_event("reading: clear");
+                let _ = response_tx.send(Ok(()));
+            }
+            AutomationCommand::ReaderModeOpen { url, response_tx } => {
+                if let Some(item) = shell_state.reading_queue.iter().find(|item| item.url == url) {
+                    shell_state.reader_mode_open = true;
+                    shell_state.reader_mode_source_url = Some(item.url.clone());
+                    shell_state.reader_mode_text = item
+                        .article_text
+                        .clone()
+                        .unwrap_or_else(|| "No article text available.".to_string());
+                    shell_state.record_event("reader: open");
+                    let _ = response_tx.send(Ok(()));
+                } else {
+                    let _ = response_tx.send(Err("not found".to_string()));
+                }
+            }
+            AutomationCommand::ReaderModeClose { response_tx } => {
+                shell_state.reader_mode_open = false;
+                shell_state.reader_mode_source_url = None;
+                shell_state.reader_mode_text.clear();
+                shell_state.record_event("reader: close");
                 let _ = response_tx.send(Ok(()));
             }
             AutomationCommand::InteractDom { selector, event, value, response_tx } => {
