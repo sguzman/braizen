@@ -657,7 +657,7 @@ impl ServoEmbedder {
 
         #[cfg(feature = "servo-upstream")]
         if let Some(upstream) = &mut self.upstream {
-            upstream.evaluate_javascript(script, callback);
+            upstream.evaluate_javascript(_script, callback);
             return;
         }
         callback(Err("Embedder has no active upstream".to_string()));
