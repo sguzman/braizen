@@ -1,12 +1,14 @@
 # Brazen Automation API
 
-The Brazen automation API allows external applications and scripts to control the browser and introspect its state via a WebSocket connection.
+The Brazen automation API allows external applications and scripts to control the
+browser and introspect its state via a WebSocket connection.
 
 ## Connecting
 
 By default, Brazen listens for WebSocket connections on `ws://127.0.0.1:7942/ws`.
 
 The bind address can be configured in `brazen.toml`:
+
 ```toml
 [automation]
 enabled = true
@@ -66,7 +68,8 @@ If `ok` is `false`, the `error` field will contain a description of the failure.
 ### Inspection
 
 - `snapshot`: Get a full state dump of the browser (tabs, cache stats, etc.).
-- `dom-query`: Query the DOM of the active tab using a CSS selector. Parameters: `selector`.
+- `dom-query`: Query the DOM of the active tab using a CSS selector.
+  Parameters: `selector`.
 - `rendered-text`: Get the full text content of the active tab.
 - `article_text`: Get the extracted article text (Reader Mode content).
 - `screenshot`: Capture a screenshot of the active tab (returns base64).
@@ -75,9 +78,12 @@ If `ok` is `false`, the `error` field will contain a description of the failure.
 ### System
 
 - `cache-stats`: Get statistics about the asset cache.
-- `cache-query`: Search for cached assets. Parameters: `query` (AssetQuery object), `limit`.
-- `terminal-exec`: Execute a command in the local terminal (requires capability). Parameters: `cmd`, `args`, `cwd`.
-- `mount-add`: Mount a local directory as a virtual resource. Parameters: `name`, `local_path`, `read_only`, `allowed_domains`.
+- `cache-query`: Search for cached assets.
+  Parameters: `query` (AssetQuery object), `limit`.
+- `terminal-exec`: Execute a command in the local terminal (requires capability).
+  Parameters: `cmd`, `args`, `cwd`.
+- `mount-add`: Mount a local directory as a virtual resource.
+  Parameters: `name`, `local_path`, `read_only`, `allowed_domains`.
 - `shutdown`: Close the browser.
 
 ## Events
