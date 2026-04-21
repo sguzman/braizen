@@ -7,6 +7,7 @@ use crate::mcp::{McpServerProxy, McpTool};
 pub struct StdioMcpServer {
     name: String,
     child: Mutex<Child>,
+    cached_tools: std::sync::RwLock<Vec<McpTool>>,
 }
 
 impl StdioMcpServer {
@@ -25,6 +26,7 @@ impl StdioMcpServer {
         let server = Self {
             name,
             child: Mutex::new(child),
+            cached_tools: std::sync::RwLock::new(Vec::new()),
         };
 
         // Handshake: initialize
@@ -34,7 +36,25 @@ impl StdioMcpServer {
             "clientInfo": { "name": "brazen", "version": "0.1.0" }
         }))?;
 
+        // Initial tool fetch
+        server.refresh_tools();
+
         Ok(server)
+    }
+
+    pub fn refresh_tools(&self) {
+        if let Ok(val) = self.send_request("tools/list", json!({})) {
+            if let Some(tools_array) = val.get("tools").and_then(|t| t.as_array()) {
+                let tools = tools_array.iter().map(|t| McpTool {
+                    name: t.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_string(),
+                    description: t.get("description").and_then(|d| d.as_str()).unwrap_or_default().to_string(),
+                    input_schema: t.get("inputSchema").cloned().unwrap_or(json!({})),
+                }).collect();
+                if let Ok(mut cache) = self.cached_tools.write() {
+                    *cache = tools;
+                }
+            }
+        }
     }
 
     fn send_request(&self, method: &str, params: Value) -> Result<Value, String> {
@@ -71,20 +91,7 @@ impl McpServerProxy for StdioMcpServer {
     }
 
     fn list_tools(&self) -> Vec<McpTool> {
-        match self.send_request("tools/list", json!({})) {
-            Ok(val) => {
-                if let Some(tools) = val.get("tools").and_then(|t| t.as_array()) {
-                    tools.iter().map(|t| McpTool {
-                        name: t.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_string(),
-                        description: t.get("description").and_then(|d| d.as_str()).unwrap_or_default().to_string(),
-                        input_schema: t.get("inputSchema").cloned().unwrap_or(json!({})),
-                    }).collect()
-                } else {
-                    Vec::new()
-                }
-            }
-            Err(_) => Vec::new(),
-        }
+        self.cached_tools.read().map(|c| c.clone()).unwrap_or_default()
     }
 
     fn call_tool(&self, name: &str, args: Value) -> Result<Value, String> {
