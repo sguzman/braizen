@@ -41,3 +41,5 @@ Tracks local sockets, WebSocket APIs, subscriptions, and browser-state access fo
       - [ ] `list-logs`: Stream or tail the internal application logs
       - [ ] `get-dom`: Retrieve a serialized/A11y-tree view of a specific tab
       - [ ] `interact-dom`: Send events (click, type, scroll) to DOM elements
+      - [ ] `screenshot-tab`: Capture the current visual state of a tab
+      - [ ] `screenshot-window`: Capture the entire window UI
