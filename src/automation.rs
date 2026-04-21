@@ -27,6 +27,8 @@ use crate::engine::{EngineFrame, PixelFormat};
 use image::ImageFormat;
 use std::io::Cursor;
 use std::path::Path;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomationSnapshot {
@@ -199,6 +201,10 @@ pub enum AutomationRequest {
         cmd: String,
         args: Vec<String>,
         cwd: Option<String>,
+    },
+    ApprovalRespond {
+        approval_id: String,
+        decision: String,
     },
     Shutdown,
 }
@@ -391,6 +397,15 @@ struct AutomationServerState {
     max_subscriptions: usize,
     connection_semaphore: Arc<Semaphore>,
     audit_logger: Arc<AuditLogger>,
+    pending_approvals: Arc<RwLock<HashMap<String, PendingApproval>>>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingApproval {
+    capability: Capability,
+    request: AutomationRequest,
+    user_agent: Option<String>,
+    client_ip: Option<String>,
 }
 
 impl AutomationServerState {
@@ -404,13 +419,14 @@ impl AutomationServerState {
             max_subscriptions: config.max_subscriptions.max(1) as usize,
             connection_semaphore: Arc::new(Semaphore::new(max_connections)),
             audit_logger,
+            pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     fn check_permission(&self, capability: Capability) -> Result<(), String> {
         match self.handle.permissions.decision_for(&capability) {
             PermissionDecision::Allow => Ok(()),
-            PermissionDecision::Ask => Err("capability requires approval".to_string()),
+            PermissionDecision::Ask => Err("approval-required".to_string()),
             PermissionDecision::Deny => Err("capability denied".to_string()),
         }
     }
@@ -955,6 +971,43 @@ async fn handle_request(
         }
         AutomationRequest::TerminalExec { cmd, args, cwd } => {
             if let Err(error) = state.check_permission(Capability::TerminalExec) {
+                if error == "approval-required" {
+                    let approval_id = Uuid::new_v4().to_string();
+                    let now = Utc::now().to_rfc3339();
+                    let pending = PendingApproval {
+                        capability: Capability::TerminalExec,
+                        request: AutomationRequest::TerminalExec {
+                            cmd: cmd.clone(),
+                            args: args.clone(),
+                            cwd: cwd.clone(),
+                        },
+                        user_agent: user_agent.clone(),
+                        client_ip: client_ip.clone(),
+                    };
+                    state
+                        .pending_approvals
+                        .write()
+                        .expect("pending approvals lock")
+                        .insert(approval_id.clone(), pending);
+                    return Some(
+                        serde_json::to_string(&AutomationResponse {
+                            id,
+                            ok: false,
+                            result: Some(serde_json::json!({
+                                "approval_id": approval_id,
+                                "capability": Capability::TerminalExec.label(),
+                                "created_at": now,
+                                "summary": {
+                                    "cmd": cmd,
+                                    "args": args,
+                                    "cwd": cwd,
+                                }
+                            })),
+                            error: Some("approval-required".to_string()),
+                        })
+                        .unwrap(),
+                    );
+                }
                 return Some(error_response(id, &error));
             }
             let request = crate::terminal::TerminalRequest { cmd, args, cwd };
@@ -968,6 +1021,49 @@ async fn handle_request(
                 })
                 .unwrap(),
             )
+        }
+        AutomationRequest::ApprovalRespond { approval_id, decision } => {
+            let decision_lower = decision.to_lowercase();
+            let allow = matches!(decision_lower.as_str(), "allow" | "approve");
+            let pending = state
+                .pending_approvals
+                .write()
+                .expect("pending approvals lock")
+                .remove(&approval_id);
+            let Some(pending) = pending else {
+                return Some(error_response(id, "unknown approval id"));
+            };
+
+            let _ = state.audit_logger.log(AuditEntry {
+                timestamp: Utc::now(),
+                command: format!("approval: {} {}", pending.capability.label(), decision_lower),
+                user_agent: pending.user_agent.clone(),
+                client_ip: pending.client_ip.clone(),
+                outcome: if allow { "allowed".to_string() } else { "denied".to_string() },
+            });
+
+            if !allow {
+                return Some(error_response(id, "denied"));
+            }
+
+            match pending.request {
+                AutomationRequest::TerminalExec { cmd, args, cwd } => {
+                    let request = crate::terminal::TerminalRequest { cmd, args, cwd };
+                    let response =
+                        crate::terminal::TerminalBroker::execute(&state.handle.terminal_config, request)
+                            .await;
+                    Some(
+                        serde_json::to_string(&AutomationResponse {
+                            id,
+                            ok: response.success,
+                            result: Some(response),
+                            error: None,
+                        })
+                        .unwrap(),
+                    )
+                }
+                _ => Some(error_response(id, "unsupported pending request")),
+            }
         }
         AutomationRequest::Shutdown => {
             let result = state.handle.request_shutdown();
@@ -1343,11 +1439,88 @@ pub fn drain_automation_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform_paths::RuntimePaths;
+    use tempfile::tempdir;
 
     #[test]
     fn automation_request_parses_tab_list() {
         let input = r#"{"id":"1","type":"tab-list"}"#;
         let parsed: AutomationEnvelope<AutomationRequest> = serde_json::from_str(input).unwrap();
         assert!(matches!(parsed.payload, AutomationRequest::TabList));
+    }
+
+    #[tokio::test]
+    async fn terminal_exec_requires_approval_when_ask() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::TerminalExec, PermissionDecision::Ask);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            terminal: crate::config::TerminalConfig {
+                allowlist: vec!["echo".to_string()],
+                ..crate::config::TerminalConfig::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let raw = r#"{"id":"1","type":"terminal-exec","cmd":"echo","args":["hi"],"cwd":null}"#;
+        let response = handle_request(&state, raw, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(!parsed.ok);
+        assert_eq!(parsed.error.as_deref(), Some("approval-required"));
+        let approval_id = parsed
+            .result
+            .as_ref()
+            .and_then(|v| v.get("approval_id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(!approval_id.is_empty());
+
+        let approve = serde_json::json!({
+            "id": "2",
+            "type": "approval-respond",
+            "approval_id": approval_id,
+            "decision": "allow"
+        })
+        .to_string();
+        let response = handle_request(&state, &approve, &mut Vec::new(), None, None)
+            .await
+            .expect("approve response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
     }
 }
