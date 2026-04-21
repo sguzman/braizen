@@ -325,6 +325,11 @@ pub enum AutomationRequest {
         input_path: String,
         overwrite: Option<bool>,
     },
+    ConnectorList,
+    ConnectorSet {
+        connector: String,
+        enabled: bool,
+    },
     Shutdown,
 }
 
@@ -662,6 +667,22 @@ impl AutomationServerState {
             return Err("rate-limit".to_string());
         }
         Ok(())
+    }
+
+    fn check_connector_enabled(&self, connector: &str) -> Result<(), String> {
+        let db_path = self
+            .handle
+            .runtime_paths
+            .active_profile_dir
+            .join("state.sqlite");
+        let Ok(db) = crate::profile_db::ProfileDb::open(db_path) else {
+            return Ok(());
+        };
+        match db.get_connector_enabled(connector) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(format!("connector disabled: {connector}")),
+            Err(_) => Ok(()),
+        }
     }
 }
 
@@ -1555,6 +1576,9 @@ async fn handle_request(
             if let Err(error) = state.check_rate_limit("terminal-exec", 30) {
                 return Some(error_response(id, &error));
             }
+            if let Err(error) = state.check_connector_enabled("terminal") {
+                return Some(error_response(id, &error));
+            }
             if let Err(error) = state.check_permission(Capability::TerminalExec) {
                 if error == "approval-required" {
                     let approval_id = Uuid::new_v4().to_string();
@@ -1609,6 +1633,9 @@ async fn handle_request(
         }
         AutomationRequest::TerminalExecStream { cmd, args, cwd } => {
             if let Err(error) = state.check_rate_limit("terminal-exec-stream", 30) {
+                return Some(error_response(id, &error));
+            }
+            if let Err(error) = state.check_connector_enabled("terminal") {
                 return Some(error_response(id, &error));
             }
             if let Err(error) = state.check_permission(Capability::TerminalExec) {
@@ -1832,6 +1859,9 @@ async fn handle_request(
             if let Err(error) = state.check_rate_limit("terminal-cancel", 60) {
                 return Some(error_response(id, &error));
             }
+            if let Err(error) = state.check_connector_enabled("terminal") {
+                return Some(error_response(id, &error));
+            }
             if let Err(error) = state.check_permission(Capability::TerminalExec) {
                 return Some(error_response(id, &error));
             }
@@ -1851,6 +1881,9 @@ async fn handle_request(
             Some(ok_response(id))
         }
         AutomationRequest::FsList { url } => {
+            if let Err(error) = state.check_connector_enabled("fs") {
+                return Some(error_response(id, &error));
+            }
             if let Err(error) = state.check_permission(Capability::FsRead) {
                 if error == "approval-required" {
                     let approval_id = Uuid::new_v4().to_string();
@@ -1903,6 +1936,9 @@ async fn handle_request(
             )
         }
         AutomationRequest::FsRead { url } => {
+            if let Err(error) = state.check_connector_enabled("fs") {
+                return Some(error_response(id, &error));
+            }
             if let Err(error) = state.check_permission(Capability::FsRead) {
                 if error == "approval-required" {
                     let approval_id = Uuid::new_v4().to_string();
@@ -1964,6 +2000,9 @@ async fn handle_request(
         }
         AutomationRequest::FsWrite { url, body_base64 } => {
             if let Err(error) = state.check_rate_limit("fs-write", 60) {
+                return Some(error_response(id, &error));
+            }
+            if let Err(error) = state.check_connector_enabled("fs") {
                 return Some(error_response(id, &error));
             }
             if let Err(error) = state.check_permission(Capability::FsWrite) {
@@ -2055,6 +2094,9 @@ async fn handle_request(
 
             match pending.request {
                 AutomationRequest::TerminalExec { cmd, args, cwd } => {
+                    if let Err(error) = state.check_connector_enabled("terminal") {
+                        return Some(error_response(id, &error));
+                    }
                     let request = crate::terminal::TerminalRequest { cmd, args, cwd };
                     let response =
                         crate::terminal::TerminalBroker::execute(&state.handle.terminal_config, request)
@@ -2070,6 +2112,9 @@ async fn handle_request(
                     )
                 }
                 AutomationRequest::FsList { url } => {
+                    if let Err(error) = state.check_connector_enabled("fs") {
+                        return Some(error_response(id, &error));
+                    }
                     let parsed = Url::parse(&url).map_err(|e| e.to_string());
                     let Ok(parsed) = parsed else {
                         return Some(error_response(id, "invalid url"));
@@ -2090,6 +2135,9 @@ async fn handle_request(
                     )
                 }
                 AutomationRequest::FsRead { url } => {
+                    if let Err(error) = state.check_connector_enabled("fs") {
+                        return Some(error_response(id, &error));
+                    }
                     let parsed = Url::parse(&url).map_err(|e| e.to_string());
                     let Ok(parsed) = parsed else {
                         return Some(error_response(id, "invalid url"));
@@ -2117,6 +2165,9 @@ async fn handle_request(
                     )
                 }
                 AutomationRequest::FsWrite { url, body_base64 } => {
+                    if let Err(error) = state.check_connector_enabled("fs") {
+                        return Some(error_response(id, &error));
+                    }
                     let parsed = Url::parse(&url).map_err(|e| e.to_string());
                     let Ok(parsed) = parsed else {
                         return Some(error_response(id, "invalid url"));
@@ -2154,6 +2205,9 @@ async fn handle_request(
                     }
                 }
                 AutomationRequest::ScreenshotWindow => {
+                    if let Err(error) = state.check_connector_enabled("screenshot") {
+                        return Some(error_response(id, &error));
+                    }
                     let (tx, rx) = tokio::sync::oneshot::channel();
                     let _ = state.handle.command_tx.send(AutomationCommand::ScreenshotWindow { response_tx: tx });
                     match rx.await {
@@ -2208,6 +2262,9 @@ async fn handle_request(
             }
         }
         AutomationRequest::ScreenshotWindow => {
+            if let Err(error) = state.check_connector_enabled("screenshot") {
+                return Some(error_response(id, &error));
+            }
             if let Err(error) = state.check_permission(Capability::ScreenshotWindow) {
                 if error == "approval-required" {
                     let approval_id = Uuid::new_v4().to_string();
@@ -2473,6 +2530,65 @@ async fn handle_request(
                 error: None,
             };
             Some(serde_json::to_string(&response).unwrap())
+        }
+        AutomationRequest::ConnectorList => {
+            let db_path = state
+                .handle
+                .runtime_paths
+                .active_profile_dir
+                .join("state.sqlite");
+            let db = match crate::profile_db::ProfileDb::open(db_path) {
+                Ok(db) => db,
+                Err(error) => return Some(error_response(id, &error)),
+            };
+            let list = match db.list_connector_policies() {
+                Ok(list) => list,
+                Err(error) => return Some(error_response(id, &error)),
+            };
+            let result = list
+                .into_iter()
+                .map(|(connector, enabled)| serde_json::json!({ "connector": connector, "enabled": enabled }))
+                .collect::<Vec<_>>();
+            Some(
+                serde_json::to_string(&AutomationResponse {
+                    id,
+                    ok: true,
+                    result: Some(result),
+                    error: None,
+                })
+                .unwrap(),
+            )
+        }
+        AutomationRequest::ConnectorSet { connector, enabled } => {
+            let connector = connector.trim().to_string();
+            if connector.is_empty() {
+                return Some(error_response(id, "connector required"));
+            }
+            if connector.contains("..") || connector.contains('/') || connector.contains('\\') {
+                return Some(error_response(id, "invalid connector"));
+            }
+            let db_path = state
+                .handle
+                .runtime_paths
+                .active_profile_dir
+                .join("state.sqlite");
+            let db = match crate::profile_db::ProfileDb::open(db_path) {
+                Ok(db) => db,
+                Err(error) => return Some(error_response(id, &error)),
+            };
+            let now = Utc::now().to_rfc3339();
+            if let Err(error) = db.set_connector_enabled(&connector, enabled, &now) {
+                return Some(error_response(id, &error));
+            }
+            Some(
+                serde_json::to_string(&AutomationResponse::<serde_json::Value> {
+                    id,
+                    ok: true,
+                    result: Some(serde_json::json!({ "connector": connector, "enabled": enabled })),
+                    error: None,
+                })
+                .unwrap(),
+            )
         }
         AutomationRequest::Shutdown => {
             let result = state.handle.request_shutdown();
@@ -2940,6 +3056,7 @@ pub fn drain_automation_commands(
 mod tests {
     use super::*;
     use crate::platform_paths::RuntimePaths;
+    use crate::profile_db::ProfileDb;
     use tempfile::tempdir;
     use tokio::time::{timeout, Duration};
 
@@ -3207,6 +3324,147 @@ mod tests {
         let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
         assert!(parsed.ok, "expected ok after approval: {parsed:?}");
         assert_eq!(std::fs::read(mount_dir.path().join("test.txt")).unwrap(), b"hello");
+    }
+
+    #[tokio::test]
+    async fn connector_list_and_set_round_trips() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+        std::fs::create_dir_all(&paths.active_profile_dir).unwrap();
+        let db = ProfileDb::open(paths.active_profile_dir.join("state.sqlite")).unwrap();
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let list_raw = r#"{"id":"1","type":"connector-list"}"#;
+        let response = handle_request(&state, list_raw, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+        let list = parsed.result.unwrap();
+        assert!(list.as_array().unwrap_or(&Vec::new()).len() >= 1);
+        assert!(list
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v.get("connector").and_then(|s| s.as_str()) == Some("terminal")));
+
+        let now = Utc::now().to_rfc3339();
+        db.set_connector_enabled("terminal", false, &now).unwrap();
+
+        let set_raw = r#"{"id":"2","type":"connector-set","connector":"terminal","enabled":false}"#;
+        let response = handle_request(&state, set_raw, &mut Vec::new(), None, None)
+            .await
+            .expect("set response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+
+        let list_raw = r#"{"id":"3","type":"connector-list"}"#;
+        let response = handle_request(&state, list_raw, &mut Vec::new(), None, None)
+            .await
+            .expect("response");
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(parsed.ok);
+        let list = parsed.result.unwrap();
+        let terminal_enabled = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v.get("connector").and_then(|s| s.as_str()) == Some("terminal"))
+            .and_then(|v| v.get("enabled"))
+            .and_then(|b| b.as_bool())
+            .unwrap_or(true);
+        assert!(!terminal_enabled);
+    }
+
+    #[tokio::test]
+    async fn terminal_exec_denied_when_connector_disabled() {
+        let dir = tempdir().unwrap();
+        let config = BrazenConfig {
+            automation: AutomationConfig {
+                enabled: true,
+                require_auth: false,
+                ..AutomationConfig::default()
+            },
+            features: crate::config::FeatureFlags {
+                automation_server: true,
+                ..crate::config::FeatureFlags::default()
+            },
+            permissions: PermissionPolicy {
+                capabilities: {
+                    let mut map = PermissionPolicy::default().capabilities;
+                    map.insert(Capability::TerminalExec, PermissionDecision::Allow);
+                    map
+                },
+                ..PermissionPolicy::default()
+            },
+            terminal: crate::config::TerminalConfig {
+                allowlist: vec!["echo".to_string()],
+                ..crate::config::TerminalConfig::default()
+            },
+            ..BrazenConfig::default()
+        };
+
+        let paths = RuntimePaths {
+            config_path: dir.path().join("brazen.toml"),
+            data_dir: dir.path().join("data"),
+            logs_dir: dir.path().join("logs"),
+            profiles_dir: dir.path().join("profiles"),
+            cache_dir: dir.path().join("cache"),
+            downloads_dir: dir.path().join("downloads"),
+            crash_dumps_dir: dir.path().join("crash"),
+            active_profile_dir: dir.path().join("profiles/default"),
+            session_path: dir.path().join("profiles/default/session.json"),
+            audit_log_path: dir.path().join("logs/audit.jsonl"),
+        };
+        std::fs::create_dir_all(&paths.active_profile_dir).unwrap();
+        let db = ProfileDb::open(paths.active_profile_dir.join("state.sqlite")).unwrap();
+        let now = Utc::now().to_rfc3339();
+        db.set_connector_enabled("terminal", false, &now).unwrap();
+
+        let mount_manager = crate::mounts::MountManager::new();
+        let runtime = start_automation_runtime(&config, &paths, mount_manager).expect("runtime");
+        let audit_logger = Arc::new(AuditLogger::new(paths.audit_log_path.clone()));
+        let state = AutomationServerState::new(config.automation.clone(), runtime.handle, audit_logger);
+
+        let raw = r#"{"id":"1","type":"terminal-exec","cmd":"echo","args":["hi"],"cwd":null}"#;
+        let response = timeout(
+            Duration::from_secs(5),
+            handle_request(&state, raw, &mut Vec::new(), None, None),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let parsed: AutomationResponse<serde_json::Value> = serde_json::from_str(&response).unwrap();
+        assert!(!parsed.ok);
+        assert_eq!(parsed.error.as_deref(), Some("connector disabled: terminal"));
     }
 
     #[tokio::test]

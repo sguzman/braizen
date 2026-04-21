@@ -1923,8 +1923,8 @@ id = "local-connectors.md:35:cadf2a93b6"
 file = "local-connectors.md"
 line = 35
 text = "Per-profile connector policies"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::connector_list_and_set_round_trips", "automation::tests::terminal_exec_denied_when_connector_disabled"]
 planned_tests = ["todo::cadf2a93b6"]
 
 [[item]]
@@ -2634,8 +2634,8 @@ id = "persistence-and-profiles.md:25:e3bee80fae"
 file = "persistence-and-profiles.md"
 line = 25
 text = "Per-profile connector policies"
-status = "planned"
-tests = []
+status = "done"
+tests = ["automation::tests::connector_list_and_set_round_trips", "automation::tests::terminal_exec_denied_when_connector_disabled", "profile_db::tests::db_connector_policies_default_to_enabled_and_can_be_disabled"]
 planned_tests = ["todo::e3bee80fae"]
 
 [[item]]

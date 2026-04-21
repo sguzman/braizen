@@ -98,6 +98,12 @@ impl ProfileDb {
               expose_tab_api INTEGER NOT NULL,
               expose_cache_api INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS connector_policies (
+              connector TEXT PRIMARY KEY,
+              enabled INTEGER NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             "#,
         )
         .map_err(|e| format!("init schema failed: {e}"))?;
@@ -122,6 +128,15 @@ impl ProfileDb {
                 if default_auto.expose_cache_api { 1 } else { 0 },
             ),
         );
+
+        // Seed known connector policies as enabled.
+        let now = chrono::Utc::now().to_rfc3339();
+        for name in ["terminal", "fs", "screenshot", "mcp"] {
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO connector_policies(connector, enabled, updated_at) VALUES(?,?,?)",
+                (name, 1i64, now.clone()),
+            );
+        }
         Ok(())
     }
 
@@ -438,6 +453,60 @@ impl ProfileDb {
             expose_cache_api: row.7 != 0,
         })
     }
+
+    pub fn set_connector_enabled(
+        &self,
+        connector: &str,
+        enabled: bool,
+        updated_at: &str,
+    ) -> Result<(), String> {
+        let conn = self.connect()?;
+        conn.execute(
+            r#"
+            INSERT INTO connector_policies(connector, enabled, updated_at)
+            VALUES(?,?,?)
+            ON CONFLICT(connector) DO UPDATE SET
+              enabled=excluded.enabled,
+              updated_at=excluded.updated_at
+            "#,
+            (connector, if enabled { 1 } else { 0 }, updated_at),
+        )
+        .map_err(|e| format!("set connector policy failed: {e}"))?;
+        Ok(())
+    }
+
+    pub fn get_connector_enabled(&self, connector: &str) -> Result<bool, String> {
+        let conn = self.connect()?;
+        let enabled: Option<i64> = conn
+            .query_row(
+                "SELECT enabled FROM connector_policies WHERE connector=?",
+                [connector],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("get connector policy failed: {e}"))?;
+        Ok(enabled.unwrap_or(1) != 0)
+    }
+
+    pub fn list_connector_policies(&self) -> Result<Vec<(String, bool)>, String> {
+        let conn = self.connect()?;
+        let mut stmt = conn
+            .prepare("SELECT connector, enabled FROM connector_policies ORDER BY connector")
+            .map_err(|e| format!("prepare connector policies failed: {e}"))?;
+        let mut rows = stmt
+            .query([])
+            .map_err(|e| format!("query connector policies failed: {e}"))?;
+        let mut out = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("read connector policy row failed: {e}"))?
+        {
+            let name: String = row.get(0).map_err(|e| format!("get connector failed: {e}"))?;
+            let enabled: i64 = row.get(1).map_err(|e| format!("get enabled failed: {e}"))?;
+            out.push((name, enabled != 0));
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -531,5 +600,16 @@ mod tests {
         assert_eq!(loaded.auth_token, settings.auth_token);
         assert_eq!(loaded.max_connections, settings.max_connections);
         assert_eq!(loaded.expose_cache_api, settings.expose_cache_api);
+    }
+
+    #[test]
+    fn db_connector_policies_default_to_enabled_and_can_be_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = ProfileDb::open(dir.path().join("state.sqlite")).unwrap();
+        assert!(db.get_connector_enabled("terminal").unwrap());
+        db.set_connector_enabled("terminal", false, "now").unwrap();
+        assert!(!db.get_connector_enabled("terminal").unwrap());
+        let list = db.list_connector_policies().unwrap();
+        assert!(list.iter().any(|(name, enabled)| name == "terminal" && !enabled));
     }
 }

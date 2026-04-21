@@ -32,5 +32,5 @@ Tracks the brokered adapters between Brazen and local resources on the host mach
 ## Operational Concerns
 
 - [ ] Connector registration and lifecycle management
-- [ ] Per-profile connector policies
+- [x] Per-profile connector policies
 - [ ] Test doubles for connector-heavy workflows
