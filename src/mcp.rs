@@ -63,6 +63,12 @@ impl McpBroker {
         let mut registry = registry.write().unwrap();
         registry.servers.push(server);
     }
+
+    pub fn list_servers() -> Vec<String> {
+        let registry = get_registry();
+        let registry = registry.read().unwrap();
+        registry.servers.iter().map(|s| s.name().to_string()).collect()
+    }
 }
 
 struct MockServerProxy;

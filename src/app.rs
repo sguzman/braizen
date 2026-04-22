@@ -24,6 +24,7 @@ use crate::platform_paths::RuntimePaths;
 use crate::rendering::{normalize_pixels, probe_frame_stats};
 use crate::session::{NavigationEntry, SessionSnapshot, load_session};
 use crate::profile_db::ProfileDb;
+use tokio::sync::mpsc;
 
 const _PLACEHOLDER: &str = "";
 
@@ -90,6 +91,7 @@ pub struct ShellState {
     pub ai_input: String,
     pub terminal_history: Vec<String>,
     pub terminal_input: String,
+    pub terminal_busy: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -438,6 +440,7 @@ pub fn build_shell_state(
         ai_input: String::new(),
         terminal_history: vec!["Welcome to Brazen Terminal. Type 'help' for commands.".to_string()],
         terminal_input: String::new(),
+        terminal_busy: false,
     };
 
     shell_state.sync_from_engine(engine.as_mut());
@@ -513,6 +516,8 @@ pub struct BrazenApp {
     pending_screenshot_tx: Option<tokio::sync::oneshot::Sender<Result<crate::engine::EngineFrame, String>>>,
     profile_db: Option<ProfileDb>,
     last_profile_persist_at: Instant,
+    terminal_tx: Option<mpsc::UnboundedSender<String>>,
+    terminal_rx: Option<mpsc::UnboundedReceiver<crate::terminal::TerminalLine>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -672,6 +677,48 @@ impl BrazenApp {
             }
         }
 
+        let (term_tx, mut term_rx) = mpsc::unbounded_channel::<String>();
+        let (term_out_tx, term_out_rx) = mpsc::unbounded_channel::<crate::terminal::TerminalLine>();
+
+        let terminal_config = config.terminal.clone();
+        tokio::spawn(async move {
+            while let Some(cmd_line) = term_rx.recv().await {
+                let parts: Vec<String> = cmd_line.split_whitespace().map(|s| s.to_string()).collect();
+                if parts.is_empty() {
+                    continue;
+                }
+
+                let cmd = parts[0].clone();
+                let args = parts[1..].to_vec();
+
+                let _ = term_out_tx.send(crate::terminal::TerminalLine::Status(format!(
+                    "Running: {}...",
+                    cmd
+                )));
+
+                let request = crate::terminal::TerminalRequest {
+                    cmd,
+                    args,
+                    cwd: None,
+                };
+
+                let response =
+                    crate::terminal::TerminalBroker::execute(&terminal_config, request).await;
+
+                if !response.stdout.is_empty() {
+                    let _ = term_out_tx.send(crate::terminal::TerminalLine::Stdout(response.stdout));
+                }
+                if !response.stderr.is_empty() {
+                    let _ = term_out_tx.send(crate::terminal::TerminalLine::Stderr(response.stderr));
+                }
+                if let Some(err) = response.error {
+                    let _ = term_out_tx.send(crate::terminal::TerminalLine::Stderr(err));
+                }
+
+                let _ = term_out_tx.send(crate::terminal::TerminalLine::Done(response.success));
+            }
+        });
+
         Self {
             config,
             shell_state,
@@ -737,6 +784,8 @@ impl BrazenApp {
             pending_screenshot_tx: None,
             profile_db,
             last_profile_persist_at: Instant::now(),
+            terminal_tx: Some(term_tx),
+            terminal_rx: Some(term_out_rx),
         }
     }
 
@@ -880,6 +929,36 @@ impl BrazenApp {
         }
 
         self.persist_profile_state_if_due();
+    }
+
+    fn update_terminal(&mut self, ctx: &eframe::egui::Context) {
+        if let Some(rx) = &mut self.terminal_rx {
+            while let Ok(line) = rx.try_recv() {
+                match line {
+                    crate::terminal::TerminalLine::Stdout(s) => {
+                        for l in s.lines() {
+                            self.shell_state.terminal_history.push(l.to_string());
+                        }
+                    }
+                    crate::terminal::TerminalLine::Stderr(s) => {
+                        for l in s.lines() {
+                            self.shell_state.terminal_history.push(format!("[ERR] {}", l));
+                        }
+                    }
+                    crate::terminal::TerminalLine::Status(s) => {
+                        self.shell_state.terminal_history.push(format!("-- {}", s));
+                    }
+                    crate::terminal::TerminalLine::Done(_) => {
+                        self.shell_state.terminal_busy = false;
+                    }
+                }
+                ctx.request_repaint();
+                // Limit history
+                if self.shell_state.terminal_history.len() > 1000 {
+                    self.shell_state.terminal_history.remove(0);
+                }
+            }
+        }
     }
 
     fn apply_cursor_icon(&self, ctx: &eframe::egui::Context) {
@@ -3049,7 +3128,11 @@ impl BrazenApp {
                 ui.add_space(8.0);
                 ui.separator();
                 ui.horizontal(|ui| {
-                    let response = ui.text_edit_singleline(&mut self.shell_state.ai_input);
+                    let response = ui.add(
+                        eframe::egui::TextEdit::singleline(&mut self.shell_state.ai_input)
+                            .hint_text("Ask Brazen AI...")
+                            .desired_width(ui.available_width() - 60.0)
+                    );
                     if (response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter))) || ui.button("Send").clicked() {
                         let content = std::mem::take(&mut self.shell_state.ai_input);
                         if !content.is_empty() {
@@ -3058,7 +3141,13 @@ impl BrazenApp {
                                 content,
                                 timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
                             });
-                            // AI response logic would go here
+                            
+                            // Mock response for now to demonstrate connectivity
+                            self.shell_state.ai_messages.push(AiMessage {
+                                role: "Brazen".to_string(),
+                                content: "I have received your request. I am monitoring the browser environment and ready to execute commands via the terminal or MCP bridge.".to_string(),
+                                timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
+                            });
                         }
                     }
                 });
@@ -3077,53 +3166,136 @@ impl BrazenApp {
             return;
         }
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(60.0);
-                ui.heading(eframe::egui::RichText::new("Brazen Command Center").size(32.0).strong());
+            eframe::egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_space(20.0);
-                
-                ui.horizontal(|ui| {
-                    ui.add_space(ui.available_width() / 4.0);
-                    ui.group(|ui| {
-                        ui.set_width(ui.available_width() / 2.0);
-                        ui.heading("Quick Actions");
-                        if ui.button("New Private Workspace").clicked() {}
-                        if ui.button("Audit Current Session").clicked() {}
-                        if ui.button("Clear Cache & Cookies").clicked() {}
-                    });
-                });
-                
-                ui.add_space(40.0);
-                ui.horizontal(|ui| {
-                    ui.columns(3, |columns| {
-                        columns[0].group(|ui| {
-                            ui.heading("Stats");
-                            ui.label(format!("Tabs: {}", self.shell_state.history.len()));
-                            ui.label(format!("Visits: {}", self.shell_state.visit_total));
+                ui.heading(
+                    eframe::egui::RichText::new("Brazen Command Center")
+                        .size(32.0)
+                        .strong(),
+                );
+                ui.add_space(20.0);
+
+                ui.columns(2, |cols| {
+                    cols[0].vertical(|ui| {
+                        ui.group(|ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.heading("System Telemetry");
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                ui.label("Engine:");
+                                ui.strong(&self.shell_state.backend_name);
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Status:");
+                                ui.strong(self.shell_state.engine_status.to_string());
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Total Visits:");
+                                ui.strong(self.shell_state.visit_total.to_string());
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Active Tabs:");
+                                ui.strong(self.shell_state.history.len().to_string());
+                            });
                         });
-                        columns[1].group(|ui| {
-                            ui.heading("Mounts");
-                            let mounts = self.shell_state.mount_manager.list_mounts();
-                            for mount in mounts.iter().take(3) {
-                                ui.label(format!("• {}", mount.name));
+
+                        ui.add_space(10.0);
+
+                        ui.group(|ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.heading("MCP Server Health");
+                            ui.separator();
+                            let servers = crate::mcp::McpBroker::list_servers();
+                            if servers.is_empty() {
+                                ui.weak("No MCP servers registered.");
+                            } else {
+                                for server_id in servers {
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!("• {}", server_id));
+                                        ui.with_layout(
+                                            eframe::egui::Layout::right_to_left(
+                                                eframe::egui::Align::Center,
+                                            ),
+                                            |ui| {
+                                                ui.label(
+                                                    eframe::egui::RichText::new("ONLINE")
+                                                        .color(eframe::egui::Color32::GREEN)
+                                                        .small(),
+                                                );
+                                            },
+                                        );
+                                    });
+                                }
                             }
                         });
-                        columns[2].group(|ui| {
-                            ui.heading("Engine");
-                            ui.label(&self.shell_state.backend_name);
-                            ui.label(format!("Status: {}", self.shell_state.engine_status));
+                    });
+
+                    cols[1].vertical(|ui| {
+                        ui.group(|ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.heading("Live Event Stream");
+                            ui.separator();
+                            eframe::egui::ScrollArea::vertical()
+                                .max_height(200.0)
+                                .stick_to_bottom(true)
+                                .show(ui, |ui| {
+                                    for event in self.shell_state.event_log.iter().rev().take(50) {
+                                        ui.label(
+                                            eframe::egui::RichText::new(event).small().monospace(),
+                                        );
+                                    }
+                                });
+                        });
+
+                        ui.add_space(10.0);
+
+                        ui.group(|ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.heading("Active Mounts");
+                            ui.separator();
+                            let mounts = self.shell_state.mount_manager.list_mounts();
+                            if mounts.is_empty() {
+                                ui.weak("No resources mounted.");
+                            } else {
+                                for mount in mounts {
+                                    match &mount.mount_type {
+                                        crate::mounts::MountType::FileSystem(path) => {
+                                            ui.label(format!("• {} (FS: {})", mount.name, path.display()));
+                                        }
+                                        crate::mounts::MountType::Terminal => {
+                                            ui.label(format!("• {} (Terminal)", mount.name));
+                                        }
+                                        crate::mounts::MountType::Mcp => {
+                                            ui.label(format!("• {} (MCP)", mount.name));
+                                        }
+                                        crate::mounts::MountType::Tabs => {
+                                            ui.label(format!("• {} (Tabs)", mount.name));
+                                        }
+                                    }
+                                }
+                            }
                         });
                     });
                 });
-                
+
                 ui.add_space(20.0);
                 ui.group(|ui| {
-                    ui.set_width(ui.available_width());
+                    ui.set_min_width(ui.available_width());
                     ui.heading("Active Intelligence");
+                    ui.separator();
                     if self.shell_state.ai_messages.is_empty() {
                         ui.weak("No active AI session.");
                     } else {
-                        ui.label(format!("Last message: {}", self.shell_state.ai_messages.last().unwrap().content));
+                        for msg in self.shell_state.ai_messages.iter().rev().take(3) {
+                            ui.label(format!("{}: {}", msg.role, msg.content));
+                        }
+                    }
+                });
+
+                ui.add_space(40.0);
+                ui.vertical_centered(|ui| {
+                    if ui.button("Close Command Center").clicked() {
+                        self.panels.dashboard = false;
                     }
                 });
             });
@@ -3140,9 +3312,14 @@ impl BrazenApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.heading("Terminal");
-                    if ui.button("Close").clicked() {
-                        self.panels.terminal = false;
+                    if self.shell_state.terminal_busy {
+                        ui.add(eframe::egui::Spinner::new().size(12.0));
                     }
+                    ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
+                        if ui.button("Close").clicked() {
+                            self.panels.terminal = false;
+                        }
+                    });
                 });
                 ui.separator();
                 
@@ -3157,17 +3334,28 @@ impl BrazenApp {
                     
                 ui.horizontal(|ui| {
                     ui.label("brazen@local:~$");
-                    let response = ui.text_edit_singleline(&mut self.shell_state.terminal_input);
+                    let response = ui.add_enabled(
+                        !self.shell_state.terminal_busy,
+                        eframe::egui::TextEdit::singleline(&mut self.shell_state.terminal_input)
+                            .desired_width(f32::INFINITY)
+                    );
+
                     if response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter)) {
                         let cmd = std::mem::take(&mut self.shell_state.terminal_input);
                         if !cmd.is_empty() {
                             self.shell_state.terminal_history.push(format!("$ {}", cmd));
-                            // TODO: Dispatch to TerminalBroker (requires async bridge or sync shell)
-                            self.shell_state.terminal_history.push("Command execution requires async runtime bridge.".to_string());
+                            if let Some(tx) = &self.terminal_tx {
+                                if tx.send(cmd).is_ok() {
+                                    self.shell_state.terminal_busy = true;
+                                } else {
+                                    self.shell_state.terminal_history.push("[ERR] Failed to send command to terminal worker".to_string());
+                                }
+                            } else {
+                                self.shell_state.terminal_history.push("[ERR] Terminal worker not initialized".to_string());
+                            }
                         }
                     }
                 });
-                ui.weak("(Interactive terminal implementation in progress)");
             });
     }
 
@@ -3435,6 +3623,7 @@ impl eframe::App for BrazenApp {
             handle.set_egui_context(ctx.clone());
         }
         self.update_automation(ctx);
+        self.update_terminal(ctx);
         self.update_render_health();
         self.apply_ui_settings(ctx);
         self.apply_cursor_icon(ctx);

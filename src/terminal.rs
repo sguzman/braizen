@@ -12,7 +12,7 @@ pub struct TerminalRequest {
     pub cwd: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalResponse {
     pub success: bool,
     pub stdout: String,
@@ -22,6 +22,14 @@ pub struct TerminalResponse {
     pub truncated_stdout: bool,
     pub truncated_stderr: bool,
     pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub enum TerminalLine {
+    Stdout(String),
+    Stderr(String),
+    Status(String),
+    Done(bool),
 }
 
 /// A simple broker for executing terminal commands.
