@@ -87,8 +87,8 @@ pub struct ShellState {
     pub dom_snapshot: Option<String>,
     pub network_log: VecDeque<crate::engine::NetworkRequest>,
     pub extracted_entities: Vec<ExtractedEntity>,
-    pub ai_messages: Vec<AiMessage>,
-    pub ai_input: String,
+    pub assistant_messages: Vec<AssistantMessage>,
+    pub assistant_input: String,
     pub terminal_history: Vec<String>,
     pub terminal_input: String,
     pub terminal_busy: bool,
@@ -115,7 +115,7 @@ pub struct ExtractedEntity {
     pub metadata: HashMap<String, String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AiMessage {
+pub struct AssistantMessage {
     pub role: String,
     pub content: String,
     pub timestamp: String,
@@ -439,8 +439,8 @@ pub fn build_shell_state(
         pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
         dom_snapshot: None,
         network_log: VecDeque::with_capacity(512),
-        ai_messages: Vec::new(),
-        ai_input: String::new(),
+        assistant_messages: Vec::new(),
+        assistant_input: String::new(),
         terminal_history: Vec::new(),
         terminal_input: String::new(),
         terminal_busy: false,
@@ -527,6 +527,8 @@ pub struct BrazenApp {
     last_dom_observation: Instant,
     settings_tab: SettingsTab,
     side_panel_tab: SidePanelTab,
+    left_panel_tab: LeftPanelTab,
+    processed_mcp_commands: std::collections::HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -584,10 +586,15 @@ enum SettingsTab {
     Appearance,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum SidePanelTab {
-    Ai,
+    Assistant,
     Terminal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum LeftPanelTab {
+    Workspace,
+    Assets,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -608,7 +615,7 @@ struct WorkspacePanels {
     tts_controls: bool,
     workspace_settings: bool,
     resources_sidebar: bool,
-    ai_assistant: bool,
+    assistant: bool,
     terminal: bool,
     dashboard: bool,
 }
@@ -632,7 +639,7 @@ impl Default for WorkspacePanels {
             tts_controls: false,
             workspace_settings: false,
             resources_sidebar: true,
-            ai_assistant: true,
+            assistant: true,
             terminal: false,
             dashboard: true,
         }
@@ -812,7 +819,9 @@ impl BrazenApp {
             terminal_rx: Some(term_out_rx),
             last_dom_observation: Instant::now(),
             settings_tab: SettingsTab::Layout,
-            side_panel_tab: SidePanelTab::Ai,
+            side_panel_tab: SidePanelTab::Assistant,
+            left_panel_tab: LeftPanelTab::Workspace,
+            processed_mcp_commands: std::collections::HashSet::new(),
         }
     }
 
@@ -2192,7 +2201,7 @@ impl BrazenApp {
             LayoutPreset::Default => WorkspacePanels {
                 sidebar_visible: true,
                 resources_sidebar: true,
-                ai_assistant: true,
+                assistant: true,
                 terminal: false,
                 dashboard: true,
                 bookmarks: false,
@@ -2213,7 +2222,7 @@ impl BrazenApp {
             LayoutPreset::Developer => WorkspacePanels {
                 sidebar_visible: true,
                 resources_sidebar: true,
-                ai_assistant: true,
+                assistant: true,
                 terminal: true,
                 dashboard: false,
                 dom_inspector: true,
@@ -2234,7 +2243,7 @@ impl BrazenApp {
             LayoutPreset::Archive => WorkspacePanels {
                 sidebar_visible: true,
                 resources_sidebar: false,
-                ai_assistant: false,
+                assistant: false,
                 terminal: false,
                 dashboard: false,
                 cache_explorer: true,
@@ -2310,7 +2319,7 @@ impl BrazenApp {
                             ui.separator();
                             changed |= ui.checkbox(&mut self.panels.sidebar_visible, "Show Sidebar").changed();
                             changed |= ui.checkbox(&mut self.panels.resources_sidebar, "Resources Sidebar").changed();
-                            changed |= ui.checkbox(&mut self.panels.ai_assistant, "AI Assistant").changed();
+                            changed |= ui.checkbox(&mut self.panels.ai_assistant, "Assistant").changed();
                             changed |= ui.checkbox(&mut self.panels.terminal, "Terminal Panel").changed();
                             changed |= ui.checkbox(&mut self.panels.dashboard, "Command Center Dashboard").changed();
                         }
@@ -2989,52 +2998,160 @@ impl BrazenApp {
         }
     }
 
-    fn render_workspace_sidebar(&mut self, ctx: &eframe::egui::Context) {
+    fn render_left_sidebar(&mut self, ctx: &eframe::egui::Context) {
         if !self.panels.sidebar_visible {
             return;
         }
-        eframe::egui::SidePanel::left("tab_sidebar")
-            .default_width(240.0)
+        eframe::egui::SidePanel::left("left_sidebar")
+            .resizable(true)
+            .default_width(260.0)
             .show(ctx, |ui| {
-                ui.heading("Workspace");
+                ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.button("New Tab").clicked() {
-                        {
-                            let mut session = self.shell_state.session.write().unwrap();
-                            session.open_new_tab("about:blank", "New Tab");
-                            session.active_tab_mut().zoom_level = self.config.engine.zoom_default;
-                        }
-                        self.shell_state.active_tab_zoom = self.config.engine.zoom_default;
-                    }
-                    if ui.button("Duplicate").clicked() {
-                        self.shell_state.session.write().unwrap().duplicate_active_tab();
-                    }
+                    ui.selectable_value(&mut self.left_panel_tab, LeftPanelTab::Workspace, "📁 Workspace");
+                    ui.selectable_value(&mut self.left_panel_tab, LeftPanelTab::Assets, "📦 Assets");
                 });
                 ui.separator();
-                let active_window = self.shell_state.session.read().unwrap().active_window;
-                let (tabs, active_index) = {
-                    let session = self.shell_state.session.read().unwrap();
-                    if let Some(window) = session.windows.get(active_window) {
-                        (window.tabs.clone(), window.active_tab)
-                    } else {
-                        (Vec::new(), 0)
+                ui.add_space(4.0);
+
+                match self.left_panel_tab {
+                    LeftPanelTab::Workspace => {
+                        ui.horizontal(|ui| {
+                            if ui.button("New Tab").clicked() {
+                                {
+                                    let mut session = self.shell_state.session.write().unwrap();
+                                    session.open_new_tab("about:blank", "New Tab");
+                                    session.active_tab_mut().zoom_level = self.config.engine.zoom_default;
+                                }
+                                self.shell_state.active_tab_zoom = self.config.engine.zoom_default;
+                            }
+                            if ui.button("Duplicate").clicked() {
+                                self.shell_state.session.write().unwrap().duplicate_active_tab();
+                            }
+                        });
+                        ui.separator();
+                        let active_window = self.shell_state.session.read().unwrap().active_window;
+                        let (tabs, active_index) = {
+                            let session = self.shell_state.session.read().unwrap();
+                            if let Some(window) = session.windows.get(active_window) {
+                                (window.tabs.clone(), window.active_tab)
+                            } else {
+                                (Vec::new(), 0)
+                            }
+                        };
+                        eframe::egui::ScrollArea::vertical().id_salt("left_workspace_scroll").show(ui, |ui| {
+                            for (index, tab) in tabs.iter().enumerate() {
+                                let label = format!(
+                                    "{}{} {}",
+                                    if index == active_index { ">" } else { " " },
+                                    if tab.pinned { "📌" } else { "  " },
+                                    tab.title
+                                );
+                                if ui.selectable_label(index == active_index, label).clicked() {
+                                    self.shell_state.session.write().unwrap().set_active_tab(index);
+                                    self.shell_state.address_bar_input = tab.url.clone();
+                                }
+                            }
+                        });
                     }
-                };
-                eframe::egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (index, tab) in tabs.iter().enumerate() {
-                        let label = format!(
-                            "{}{} {}",
-                            if index == active_index { ">" } else { " " },
-                            if tab.pinned { "📌" } else { "  " },
-                            tab.title
-                        );
-                        if ui.selectable_label(index == active_index, label).clicked() {
-                            self.shell_state.session.write().unwrap().set_active_tab(index);
-                            self.shell_state.address_bar_input = tab.url.clone();
+                    LeftPanelTab::Assets => {
+                        eframe::egui::ScrollArea::vertical().id_salt("left_assets_scroll").show(ui, |ui| {
+                            self.render_resources_content(ui);
+                        });
+                    }
+                }
+            });
+    }
+
+    fn render_top_menu(&mut self, ctx: &eframe::egui::Context) {
+        eframe::egui::TopBottomPanel::top("top_menu_bar").show(ctx, |ui| {
+            eframe::egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("New Tab").clicked() {
+                        self.handle_palette_command(PaletteCommand::NewTab);
+                        ui.close_menu();
+                    }
+                    if ui.button("Close Tab").clicked() {
+                        self.handle_palette_command(PaletteCommand::CloseTab);
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Quit").clicked() {
+                        ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+                    }
+                });
+                ui.menu_button("Edit", |ui| {
+                    if ui.button("Copy URL").clicked() {
+                        if let Some(url) = self.shell_state.last_committed_url.as_deref() {
+                            ctx.copy_text(url.to_string());
                         }
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Find...").clicked() {
+                        self.panels.find_panel_open = true;
+                        ui.close_menu();
+                    }
+                });
+                ui.menu_button("View", |ui| {
+                    ui.checkbox(&mut self.panels.dashboard, "Dashboard");
+                    ui.checkbox(&mut self.panels.sidebar_visible, "Left Sidebar");
+                    ui.checkbox(&mut self.panels.assistant, "Right Sidebar");
+                    ui.separator();
+                    if ui.button("Reload").clicked() {
+                        self.handle_palette_command(PaletteCommand::Reload);
+                        ui.close_menu();
+                    }
+                });
+                ui.menu_button("Tools", |ui| {
+                    ui.checkbox(&mut self.shell_state.observe_dom, "Observe DOM");
+                    ui.checkbox(&mut self.shell_state.control_terminal, "Control Terminal");
+                    ui.checkbox(&mut self.shell_state.use_mcp_tools, "Use MCP Tools");
+                    ui.separator();
+                    if ui.button("Settings").clicked() {
+                        self.panels.workspace_settings = true;
+                        ui.close_menu();
+                    }
+                });
+                
+                ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
+                    if let Some(status) = &self.shell_state.load_status {
+                         ui.label(eframe::egui::RichText::new(status.as_str()).small());
+                    }
+                    if self.shell_state.engine_status != EngineStatus::Ready {
+                         ui.spinner();
                     }
                 });
             });
+        });
+    }
+
+    fn monitor_chatgpt_mcp(&mut self) {
+        if !self.shell_state.observe_dom || !self.shell_state.control_terminal {
+            return;
+        }
+        
+        let Some(snapshot) = &self.shell_state.dom_snapshot else { return; };
+        
+        // Use scraper to find <client mcp="terminal">...</client>
+        let fragment = scraper::Html::parse_fragment(snapshot);
+        let selector = scraper::Selector::parse("client[mcp=\"terminal\"]").unwrap();
+        
+        for element in fragment.select(&selector) {
+            let command = element.text().collect::<String>();
+            let command = command.trim();
+            if !command.is_empty() && !self.processed_mcp_commands.contains(command) {
+                tracing::info!(target: "brazen::automation", command = %command, "Found new MCP terminal command in DOM");
+                
+                // Run command
+                if let Some(tx) = &self.terminal_tx {
+                    let _ = tx.send(command.to_string());
+                }
+                
+                // Mark as processed
+                self.processed_mcp_commands.insert(command.to_string());
+            }
+        }
     }
 
     fn render_browser_view(&mut self, ctx: &eframe::egui::Context) {
@@ -3049,20 +3166,34 @@ impl BrazenApp {
                     painter.rect_filled(
                         response.rect,
                         0.0,
-                        eframe::egui::Color32::from_black_alpha(150),
+                        eframe::egui::Color32::from_black_alpha(180),
                     );
                     painter.text(
-                        response.rect.center(),
+                        response.rect.center() - eframe::egui::vec2(0.0, 60.0),
                         eframe::egui::Align2::CENTER_CENTER,
-                        "SCAFFOLD MODE\nNo Rendering Engine Available",
-                        eframe::egui::FontId::proportional(24.0),
+                        "SCAFFOLD MODE ACTIVE",
+                        eframe::egui::FontId::proportional(28.0),
+                        eframe::egui::Color32::YELLOW,
+                    );
+                    painter.text(
+                        response.rect.center() - eframe::egui::vec2(0.0, 20.0),
+                        eframe::egui::Align2::CENTER_CENTER,
+                        "To enable full rendering, recompile with:",
+                        eframe::egui::FontId::proportional(16.0),
                         eframe::egui::Color32::WHITE,
                     );
                     painter.text(
-                        response.rect.center() + eframe::egui::vec2(0.0, 40.0),
+                        response.rect.center() + eframe::egui::vec2(0.0, 10.0),
                         eframe::egui::Align2::CENTER_CENTER,
-                        format!("Target: {}", self.shell_state.active_tab.current_url),
+                        "cargo run --features servo",
                         eframe::egui::FontId::monospace(14.0),
+                        eframe::egui::Color32::GREEN,
+                    );
+                    painter.text(
+                        response.rect.center() + eframe::egui::vec2(0.0, 50.0),
+                        eframe::egui::Align2::CENTER_CENTER,
+                        format!("Viewing: {}", self.shell_state.active_tab.current_url),
+                        eframe::egui::FontId::monospace(12.0),
                         eframe::egui::Color32::LIGHT_GRAY,
                     );
                 }
@@ -3092,62 +3223,9 @@ impl BrazenApp {
         });
     }
 
-    fn render_resources_sidebar(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.resources_sidebar {
-            return;
-        }
-        eframe::egui::SidePanel::left("resources_sidebar")
-            .resizable(true)
-            .default_width(260.0)
-            .show(ctx, |ui| {
-                ui.add_space(8.0);
-                ui.heading("Local Assets");
-                ui.add_space(4.0);
-                
-                ui.collapsing("📁 Mounts", |ui| {
-                    let mounts = self.shell_state.mount_manager.list_mounts();
-                    if mounts.is_empty() {
-                        ui.weak("No mounts active");
-                    } else {
-                        for mount in mounts {
-                            ui.horizontal(|ui| {
-                                ui.label(&mount.name);
-                                if let crate::mounts::MountType::FileSystem(path) = &mount.mount_type {
-                                    ui.weak(format!("({})", path.display()));
-                                }
-                            });
-                        }
-                    }
-                });
-                
-                ui.collapsing("📜 Scripts", |ui| {
-                    ui.weak("Automation scripts registry");
-                });
-                
-                ui.collapsing("🔌 MCP Servers", |ui| {
-                    let tools = crate::mcp::McpBroker::list_tools();
-                    for tool in tools {
-                        ui.horizontal(|ui| {
-                            ui.label(&tool.name);
-                            if ui.button("i").on_hover_text(&tool.description).clicked() {
-                                // Show tool details
-                            }
-                        });
-                    }
-                });
-                
-                ui.add_space(12.0);
-                ui.separator();
-                ui.vertical_centered(|ui| {
-                    if ui.button("Register Resource").clicked() {
-                        // Open resource dialog
-                    }
-                });
-            });
-    }
 
-    fn render_ai_assistant_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.ai_assistant {
+    fn render_assistant_panel(&mut self, ctx: &eframe::egui::Context) {
+        if !self.panels.assistant {
             return;
         }
         eframe::egui::SidePanel::right("right_panel")
@@ -3157,15 +3235,15 @@ impl BrazenApp {
             .show(ctx, |ui| {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.side_panel_tab, SidePanelTab::Ai, "🤖 AI");
+                    ui.selectable_value(&mut self.side_panel_tab, SidePanelTab::Assistant, "🤖 Assistant");
                     ui.selectable_value(&mut self.side_panel_tab, SidePanelTab::Terminal, "💻 Terminal");
                 });
                 ui.separator();
                 ui.add_space(4.0);
                 
                 match self.side_panel_tab {
-                    SidePanelTab::Ai => {
-                        self.render_ai_assistant_content(ui);
+                    SidePanelTab::Assistant => {
+                        self.render_assistant_content(ui);
                     }
                     SidePanelTab::Terminal => {
                         self.render_terminal_content(ui);
@@ -3207,11 +3285,11 @@ impl BrazenApp {
                     });
                 });
 
-                // Col 2: AI Assistant (Main Focus)
+                // Col 2: Assistant (Main Focus)
                 cols[1].vertical(|ui| {
                     ui.group(|ui| {
                         ui.set_min_width(ui.available_width());
-                        ui.heading("Brazen AI");
+                        ui.heading("Assistant");
                         ui.separator();
                         self.render_ai_assistant_content(ui);
                     });
@@ -3270,14 +3348,14 @@ impl BrazenApp {
         });
     }
 
-    fn render_ai_assistant_content(&mut self, ui: &mut eframe::egui::Ui) {
+    fn render_assistant_content(&mut self, ui: &mut eframe::egui::Ui) {
         let chat_height = ui.available_height() - 120.0;
         eframe::egui::ScrollArea::vertical()
-            .id_source("dash_ai_scroll")
+            .id_source("dash_assistant_scroll")
             .max_height(chat_height)
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for msg in &self.shell_state.ai_messages {
+                for msg in &self.shell_state.assistant_messages {
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
                             ui.strong(&msg.role);
@@ -3294,14 +3372,14 @@ impl BrazenApp {
         ui.separator();
         ui.horizontal(|ui| {
             let response = ui.add(
-                eframe::egui::TextEdit::singleline(&mut self.shell_state.ai_input)
-                    .hint_text("Ask Brazen AI...")
+                eframe::egui::TextEdit::singleline(&mut self.shell_state.assistant_input)
+                    .hint_text("Ask Assistant...")
                     .desired_width(ui.available_width() - 60.0)
             );
             if (response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter))) || ui.button("Send").clicked() {
-                let content = std::mem::take(&mut self.shell_state.ai_input);
+                let content = std::mem::take(&mut self.shell_state.assistant_input);
                 if !content.is_empty() {
-                    self.shell_state.ai_messages.push(AiMessage {
+                    self.shell_state.assistant_messages.push(AssistantMessage {
                         role: "User".to_string(),
                         content: content.clone(),
                         timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
@@ -3315,8 +3393,8 @@ impl BrazenApp {
                         response_text += " I am also analyzing the current page structure.";
                     }
 
-                    self.shell_state.ai_messages.push(AiMessage {
-                        role: "Brazen".to_string(),
+                    self.shell_state.assistant_messages.push(AssistantMessage {
+                        role: "Assistant".to_string(),
                         content: response_text,
                         timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
                     });
@@ -3361,62 +3439,6 @@ impl BrazenApp {
         });
     }
 
-    fn render_terminal_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.terminal {
-            return;
-        }
-        eframe::egui::TopBottomPanel::bottom("terminal_panel")
-            .resizable(true)
-            .default_height(200.0)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading("Terminal");
-                    if self.shell_state.terminal_busy {
-                        ui.add(eframe::egui::Spinner::new().size(12.0));
-                    }
-                    ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
-                        if ui.button("Close").clicked() {
-                            self.panels.terminal = false;
-                        }
-                    });
-                });
-                ui.separator();
-                
-                eframe::egui::ScrollArea::vertical()
-                    .max_height(140.0)
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        for line in &self.shell_state.terminal_history {
-                            ui.monospace(line);
-                        }
-                    });
-                    
-                ui.horizontal(|ui| {
-                    ui.label("brazen@local:~$");
-                    let response = ui.add_enabled(
-                        !self.shell_state.terminal_busy && self.shell_state.control_terminal,
-                        eframe::egui::TextEdit::singleline(&mut self.shell_state.terminal_input)
-                            .desired_width(f32::INFINITY)
-                    );
-
-                    if response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter)) {
-                        let cmd = std::mem::take(&mut self.shell_state.terminal_input);
-                        if !cmd.is_empty() {
-                            self.shell_state.terminal_history.push(format!("$ {}", cmd));
-                            if let Some(tx) = &self.terminal_tx {
-                                if tx.send(cmd).is_ok() {
-                                    self.shell_state.terminal_busy = true;
-                                } else {
-                                    self.shell_state.terminal_history.push("[ERR] Failed to send command to terminal worker".to_string());
-                                }
-                            } else {
-                                self.shell_state.terminal_history.push("[ERR] Terminal worker not initialized".to_string());
-                            }
-                        }
-                    }
-                });
-            });
-    }
 
     fn render_header(&mut self, ctx: &eframe::egui::Context) {
         eframe::egui::TopBottomPanel::top("header")
@@ -3693,17 +3715,16 @@ impl eframe::App for BrazenApp {
             self.write_crash_dump(&reason);
         }
         self.handle_crash_recovery();
+        self.monitor_chatgpt_mcp();
 
         // --- New Modular Layout ---
-        self.render_header(ctx);
+        self.render_top_menu(ctx);
         
         if self.panels.dashboard {
             self.render_dashboard(ctx);
         } else {
-            self.render_workspace_sidebar(ctx);
-            self.render_resources_sidebar(ctx);
-            self.render_ai_assistant_panel(ctx);
-            self.render_terminal_panel(ctx);
+            self.render_left_sidebar(ctx);
+            self.render_assistant_panel(ctx);
             self.render_browser_view(ctx);
         }
 
@@ -4007,8 +4028,8 @@ mod tests {
             dom_snapshot: None,
             network_log: VecDeque::new(),
             extracted_entities: Vec::new(),
-            ai_messages: Vec::new(),
-            ai_input: String::new(),
+            assistant_messages: Vec::new(),
+            assistant_input: String::new(),
         };
 
         let mut ready_engine = MockEngine {
@@ -4118,8 +4139,15 @@ mod tests {
             extracted_entities: Vec::new(),
             mount_manager: crate::mounts::MountManager::new(),
             pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
-            ai_messages: Vec::new(),
-            ai_input: String::new(),
+            assistant_messages: Vec::new(),
+            assistant_input: String::new(),
+            terminal_history: Vec::new(),
+            terminal_input: String::new(),
+            terminal_busy: false,
+            observe_dom: false,
+            control_terminal: false,
+            use_mcp_tools: false,
+            visit_counts: std::collections::HashMap::new(),
         };
 
         let mut engine = MockEngine {
