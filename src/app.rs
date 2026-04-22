@@ -526,6 +526,7 @@ pub struct BrazenApp {
     terminal_rx: Option<mpsc::UnboundedReceiver<crate::terminal::TerminalLine>>,
     last_dom_observation: Instant,
     settings_tab: SettingsTab,
+    side_panel_tab: SidePanelTab,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -581,6 +582,12 @@ enum SettingsTab {
     DevTools,
     Automation,
     Appearance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum SidePanelTab {
+    Ai,
+    Terminal,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -805,6 +812,7 @@ impl BrazenApp {
             terminal_rx: Some(term_out_rx),
             last_dom_observation: Instant::now(),
             settings_tab: SettingsTab::Layout,
+            side_panel_tab: SidePanelTab::Ai,
         }
     }
 
@@ -952,10 +960,14 @@ impl BrazenApp {
         // Periodic DOM observation
         if self.shell_state.observe_dom && self.last_dom_observation.elapsed() > Duration::from_secs(5) {
             self.last_dom_observation = Instant::now();
-            self.shell_state.record_event("automated dom observation triggered");
-            // In a real implementation, we would call engine.evaluate_javascript
-            // For now, we simulate a snapshot update
-            self.shell_state.dom_snapshot = Some("<html><body>Mock DOM Snapshot</body></html>".to_string());
+            let script = "document.documentElement.innerText".to_string();
+            self.engine.evaluate_javascript(script, Box::new(|_result| {
+                // The engine's evaluate_javascript implementation now injects 
+                // EngineEvent::DomSnapshotUpdated directly if it's successful.
+            }));
+            // Actually, I should probably just make the engine's evaluate_javascript implementation
+            // responsible for injecting the event if it wants to.
+            // Or I can use a channel.
         }
     }
 
@@ -3031,6 +3043,30 @@ impl BrazenApp {
                 let response = ui.add(eframe::egui::Image::from_texture(texture).shrink_to_fit());
                 self.render_viewport_rect = Some(response.rect);
                 
+                // Scaffold Mode Overlay
+                if self.shell_state.backend_name == "scaffold" {
+                    let painter = ui.painter().with_clip_rect(response.rect);
+                    painter.rect_filled(
+                        response.rect,
+                        0.0,
+                        eframe::egui::Color32::from_black_alpha(150),
+                    );
+                    painter.text(
+                        response.rect.center(),
+                        eframe::egui::Align2::CENTER_CENTER,
+                        "SCAFFOLD MODE\nNo Rendering Engine Available",
+                        eframe::egui::FontId::proportional(24.0),
+                        eframe::egui::Color32::WHITE,
+                    );
+                    painter.text(
+                        response.rect.center() + eframe::egui::vec2(0.0, 40.0),
+                        eframe::egui::Align2::CENTER_CENTER,
+                        format!("Target: {}", self.shell_state.active_tab.current_url),
+                        eframe::egui::FontId::monospace(14.0),
+                        eframe::egui::Color32::LIGHT_GRAY,
+                    );
+                }
+
                 if self.config.engine.debug_pointer_overlay
                     && let Some(pos) = self.last_pointer_pos
                     && response.rect.contains(pos)
@@ -3114,65 +3150,27 @@ impl BrazenApp {
         if !self.panels.ai_assistant {
             return;
         }
-        eframe::egui::SidePanel::right("ai_assistant")
+        eframe::egui::SidePanel::right("right_panel")
             .resizable(true)
             .default_width(320.0)
-            .max_width(480.0)
+            .min_width(240.0)
             .show(ctx, |ui| {
                 ui.add_space(8.0);
-                ui.heading("Brazen AI");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.side_panel_tab, SidePanelTab::Ai, "🤖 AI");
+                    ui.selectable_value(&mut self.side_panel_tab, SidePanelTab::Terminal, "💻 Terminal");
+                });
+                ui.separator();
                 ui.add_space(4.0);
                 
-                eframe::egui::ScrollArea::vertical()
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        for msg in &self.shell_state.ai_messages {
-                            ui.group(|ui| {
-                                ui.strong(&msg.role);
-                                ui.add(eframe::egui::Label::new(&msg.content).wrap());
-                                ui.weak(&msg.timestamp);
-                            });
-                        }
-                    });
-                
-                ui.add_space(8.0);
-                ui.separator();
-                ui.horizontal(|ui| {
-                    let response = ui.add(
-                        eframe::egui::TextEdit::singleline(&mut self.shell_state.ai_input)
-                            .hint_text("Ask Brazen AI...")
-                            .desired_width(ui.available_width() - 60.0)
-                    );
-                    if (response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter))) || ui.button("Send").clicked() {
-                        let content = std::mem::take(&mut self.shell_state.ai_input);
-                        if !content.is_empty() {
-                            self.shell_state.ai_messages.push(AiMessage {
-                                role: "User".to_string(),
-                                content,
-                                timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
-                            });
-                            // Enhanced mock response
-                            let mcp_status = if self.shell_state.use_mcp_tools {
-                                "MCP Tool bridge is ACTIVE. I can execute local commands and query connected servers."
-                            } else {
-                                "MCP Tool bridge is currently disabled."
-                            };
-
-                            self.shell_state.ai_messages.push(AiMessage {
-                                role: "Brazen".to_string(),
-                                content: format!("Understood. {}. How can I assist you with the current session?", mcp_status),
-                                timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
-                            });
-                        }
+                match self.side_panel_tab {
+                    SidePanelTab::Ai => {
+                        self.render_ai_assistant_content(ui);
                     }
-                });
-                
-                ui.add_space(8.0);
-                ui.collapsing("Capabilities", |ui| {
-                    ui.checkbox(&mut self.shell_state.observe_dom, "Observe DOM");
-                    ui.checkbox(&mut self.shell_state.control_terminal, "Control Terminal");
-                    ui.checkbox(&mut self.shell_state.use_mcp_tools, "Use MCP Tools");
-                });
+                    SidePanelTab::Terminal => {
+                        self.render_terminal_content(ui);
+                    }
+                }
             });
     }
 
@@ -3273,7 +3271,7 @@ impl BrazenApp {
     }
 
     fn render_ai_assistant_content(&mut self, ui: &mut eframe::egui::Ui) {
-        let chat_height = ui.available_height() - 80.0;
+        let chat_height = ui.available_height() - 120.0;
         eframe::egui::ScrollArea::vertical()
             .id_source("dash_ai_scroll")
             .max_height(chat_height)
@@ -3281,15 +3279,23 @@ impl BrazenApp {
             .show(ui, |ui| {
                 for msg in &self.shell_state.ai_messages {
                     ui.group(|ui| {
-                        ui.strong(&msg.role);
+                        ui.horizontal(|ui| {
+                            ui.strong(&msg.role);
+                            ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
+                                ui.weak(&msg.timestamp);
+                            });
+                        });
                         ui.add(eframe::egui::Label::new(&msg.content).wrap());
                     });
                 }
             });
-        ui.add_space(10.0);
+            
+        ui.add_space(8.0);
+        ui.separator();
         ui.horizontal(|ui| {
             let response = ui.add(
                 eframe::egui::TextEdit::singleline(&mut self.shell_state.ai_input)
+                    .hint_text("Ask Brazen AI...")
                     .desired_width(ui.available_width() - 60.0)
             );
             if (response.lost_focus() && ui.input(|i| i.key_pressed(eframe::egui::Key::Enter))) || ui.button("Send").clicked() {
@@ -3297,23 +3303,32 @@ impl BrazenApp {
                 if !content.is_empty() {
                     self.shell_state.ai_messages.push(AiMessage {
                         role: "User".to_string(),
-                        content,
+                        content: content.clone(),
                         timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
                     });
                     
-                    let mcp_status = if self.shell_state.use_mcp_tools {
-                        "MCP Tool bridge is ACTIVE. I can execute local commands and query connected servers."
-                    } else {
-                        "MCP Tool bridge is currently disabled."
-                    };
+                    let mut response_text = "I'm processing your request.".to_string();
+                    if self.shell_state.use_mcp_tools {
+                        response_text += " I will use MCP tools to gather more information.";
+                    }
+                    if self.shell_state.observe_dom {
+                        response_text += " I am also analyzing the current page structure.";
+                    }
 
                     self.shell_state.ai_messages.push(AiMessage {
                         role: "Brazen".to_string(),
-                        content: format!("Understood. {}. How can I assist you with the current session?", mcp_status),
+                        content: response_text,
                         timestamp: chrono::Utc::now().format("%H:%M:%S").to_string(),
                     });
                 }
             }
+        });
+        
+        ui.add_space(4.0);
+        ui.collapsing("Capabilities", |ui| {
+            ui.checkbox(&mut self.shell_state.observe_dom, "Observe DOM");
+            ui.checkbox(&mut self.shell_state.control_terminal, "Control Terminal");
+            ui.checkbox(&mut self.shell_state.use_mcp_tools, "Use MCP Tools");
         });
     }
 
@@ -3681,15 +3696,14 @@ impl eframe::App for BrazenApp {
 
         // --- New Modular Layout ---
         self.render_header(ctx);
-        self.render_workspace_sidebar(ctx);
-        self.render_resources_sidebar(ctx);
-        self.render_ai_assistant_panel(ctx);
-        self.render_terminal_panel(ctx);
-
-        // --- Viewport Selection ---
+        
         if self.panels.dashboard {
             self.render_dashboard(ctx);
         } else {
+            self.render_workspace_sidebar(ctx);
+            self.render_resources_sidebar(ctx);
+            self.render_ai_assistant_panel(ctx);
+            self.render_terminal_panel(ctx);
             self.render_browser_view(ctx);
         }
 

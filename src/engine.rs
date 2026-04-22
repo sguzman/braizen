@@ -382,20 +382,20 @@ pub trait BrowserEngine {
 }
 
 
-pub struct NullEngine {
+pub struct ScaffoldEngine {
     instance_id: EngineInstanceId,
     status: EngineStatus,
     active_tab: BrowserTab,
     events: Vec<EngineEvent>,
-    surface: Option<RenderSurface>,
+    surface: Option<RenderSurfaceMetadata>,
     navigation_state: NavigationState,
     focus: FocusState,
     verbose_logging: bool,
     page_zoom: f32,
-    pub mount_manager: crate::mounts::MountManager,
+    mount_manager: crate::mounts::MountManager,
 }
 
-impl NullEngine {
+impl ScaffoldEngine {
     pub fn new() -> Self {
         let navigation_state = NavigationState {
             can_go_back: false,
@@ -403,7 +403,7 @@ impl NullEngine {
             load_progress: 0.0,
             document_ready: false,
             load_status: None,
-            title: "Platform Skeleton".to_string(),
+            title: "Scaffold Mode".to_string(),
             url: "about:blank".to_string(),
             redirect_chain: Vec::new(),
             favicon_url: None,
@@ -414,7 +414,7 @@ impl NullEngine {
             status: EngineStatus::Ready,
             active_tab: BrowserTab {
                 id: 1,
-                title: "Platform Skeleton".to_string(),
+                title: "Scaffold Mode".to_string(),
                 current_url: "about:blank".to_string(),
             },
             events: Vec::new(),
@@ -428,13 +428,13 @@ impl NullEngine {
     }
 }
 
-impl Default for NullEngine {
+impl Default for ScaffoldEngine {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BrowserEngine for NullEngine {
+impl BrowserEngine for ScaffoldEngine {
     fn backend_name(&self) -> &'static str {
         "scaffold"
     }
@@ -449,7 +449,7 @@ impl BrowserEngine for NullEngine {
 
     fn health(&self) -> RenderHealth {
         RenderHealth {
-            resource_reader_ready: None,
+            resource_reader_ready: Some(true),
             resource_reader_path: None,
             upstream_active: false,
             last_error: None,
@@ -463,8 +463,7 @@ impl BrowserEngine for NullEngine {
     fn navigate(&mut self, url: &str) {
         self.active_tab.current_url = url.to_string();
         self.navigation_state.url = url.to_string();
-        self.navigation_state.redirect_chain = vec![url.to_string()];
-        self.navigation_state.title = "NullEngine".to_string();
+        self.navigation_state.title = format!("Scaffold: {}", url);
         self.navigation_state.load_progress = 1.0;
         self.navigation_state.document_ready = true;
         self.navigation_state.load_status = Some(EngineLoadStatus::Complete);
@@ -498,59 +497,37 @@ impl BrowserEngine for NullEngine {
 
     fn go_back(&mut self) {
         if self.navigation_state.can_go_back {
-            self.navigation_state.can_go_forward = true;
-            self.navigation_state.load_progress = 0.2;
-            self.navigation_state.document_ready = false;
-            self.navigation_state.load_status = Some(EngineLoadStatus::Started);
-            self.events.push(EngineEvent::NavigationStateUpdated(
-                self.navigation_state.clone(),
-            ));
+            self.navigate("about:blank");
         }
     }
 
-    fn go_forward(&mut self) {
-        if self.navigation_state.can_go_forward {
-            self.navigation_state.load_progress = 0.2;
-            self.navigation_state.document_ready = false;
-            self.navigation_state.load_status = Some(EngineLoadStatus::Started);
-            self.events.push(EngineEvent::NavigationStateUpdated(
-                self.navigation_state.clone(),
-            ));
-        }
-    }
+    fn go_forward(&mut self) {}
 
-    fn attach_surface(&mut self, surface: RenderSurfaceHandle) {
-        let metadata = self
-            .surface
-            .as_ref()
-            .map(|surface| surface.metadata.clone())
-            .unwrap_or(RenderSurfaceMetadata {
-                viewport_width: 0,
-                viewport_height: 0,
-                scale_factor_basis_points: 100,
-            });
-        self.surface = Some(RenderSurface {
-            handle: surface,
-            metadata,
-        });
-    }
+    fn attach_surface(&mut self, _surface: RenderSurfaceHandle) {}
 
-    fn set_render_surface(&mut self, metadata: RenderSurfaceMetadata) {
-        if let Some(surface) = self.surface.as_mut() {
-            surface.metadata = metadata;
-        } else {
-            self.surface = Some(RenderSurface {
-                handle: RenderSurfaceHandle {
-                    id: 0,
-                    label: "unbound".to_string(),
-                },
-                metadata,
-            });
-        }
-    }
+    fn set_render_surface(&mut self, _metadata: RenderSurfaceMetadata) {}
 
     fn render_frame(&mut self) -> Option<EngineFrame> {
-        None
+        // Return a simple mock frame to indicate we are in scaffold mode
+        if self.active_tab.current_url == "about:blank" {
+            return None;
+        }
+
+        let width = 800;
+        let height = 600;
+        let pixels = vec![32; (width * height * 4) as usize]; // Dark gray background
+        
+        // Simple "Rendering" indicator
+        Some(EngineFrame {
+            width,
+            height,
+            frame_number: 1,
+            stride_bytes: (width * 4) as usize,
+            pixel_format: PixelFormat::Rgba8,
+            alpha_mode: AlphaMode::Straight,
+            color_space: ColorSpace::Srgb,
+            pixels,
+        })
     }
 
     fn set_focus(&mut self, focus: FocusState) {
@@ -605,39 +582,35 @@ impl BrowserEngine for NullEngine {
     fn evaluate_javascript(&mut self, script: String, callback: Box<dyn FnOnce(Result<serde_json::Value, String>) + Send + 'static>) {
         // Provide stable responses for automation/e2e tests without a real JS runtime.
         if script.contains("innerText") || script.contains("textContent") {
-            // For E2E tests, if we navigated to a data URL containing "Article", return it
-            if self.active_tab.current_url.contains("Article") {
-                // If it's looking for article/main, return Content, else Article Content
+            let content = if self.active_tab.current_url.contains("Article") {
                 if script.contains("article") || script.contains("main") {
-                    callback(Ok(serde_json::Value::String("Content".to_string())));
+                    "Content".to_string()
                 } else {
-                    callback(Ok(serde_json::Value::String("Article Content".to_string())));
+                    "Article Content".to_string()
                 }
-                return;
-            }
-            callback(Ok(serde_json::Value::String("Brazen NullEngine Content".to_string())));
+            } else {
+                "Brazen Scaffold Mode Content".to_string()
+            };
+            
+            self.events.push(EngineEvent::DomSnapshotUpdated(content.clone()));
+            callback(Ok(serde_json::Value::String(content)));
             return;
         }
 
-        // Supports:
-        // - document.querySelector('<selector>') ... outerHTML
-        if let Some(selector) = script
-            .split("document.querySelector('")
-            .nth(1)
-            .and_then(|rest| rest.split("')").next())
-        {
-            let html = if selector == "body" {
-                "<body><h1>Brazen NullEngine</h1><p>automation</p></body>".to_string()
-            } else if selector == "h1" && self.active_tab.current_url.contains("Article") {
+        // Supports mock selector queries for E2E tests
+        if script.contains("document.querySelector") {
+            let html = if script.contains("'body'") {
+                "<body><h1>Brazen Scaffold</h1><p>automation</p></body>".to_string()
+            } else if script.contains("'h1'") && self.active_tab.current_url.contains("Article") {
                 "<h1>Article</h1>".to_string()
             } else {
-                format!("<mock selector=\"{selector}\"></mock>")
+                "<mock-element></mock-element>".to_string()
             };
             callback(Ok(serde_json::Value::String(html)));
             return;
         }
 
-        callback(Ok(serde_json::Value::String(format!("null-result: {}", script))));
+        callback(Ok(serde_json::Value::String(format!("scaffold-result: {}", script))));
     }
 
     fn interact_dom(&mut self, selector: String, event: String, value: Option<String>, callback: Box<dyn FnOnce(Result<(), String>) + Send + 'static>) {
@@ -697,7 +670,7 @@ impl EngineFactory for ServoEngineFactory {
 
         #[cfg(not(feature = "servo"))]
         {
-            let mut engine = NullEngine::new();
+            let mut engine = ScaffoldEngine::new();
             engine.mount_manager = mount_manager;
             Box::new(engine)
         }
