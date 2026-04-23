@@ -1,0 +1,2 @@
+[env]
+BRAZEN_SERVO_SOURCE = { value = "vendor/servo", relative = true }

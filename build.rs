@@ -2,11 +2,20 @@ use std::path::PathBuf;
 
 fn main() {
     if std::env::var("CARGO_FEATURE_SERVO").is_ok() {
-        let source = std::env::var("BRAZEN_SERVO_SOURCE").ok();
+        let source = std::env::var("BRAZEN_SERVO_SOURCE").ok()
+            .or_else(|| {
+                let default_path = "vendor/servo";
+                if std::path::Path::new(default_path).exists() {
+                    Some(default_path.to_string())
+                } else {
+                    None
+                }
+            });
+
         let Some(source) = source else {
-            panic!("BRAZEN_SERVO_SOURCE must be set when building with the servo feature");
+            panic!("BRAZEN_SERVO_SOURCE must be set when building with the servo feature (no default 'vendor/servo' found)");
         };
-        let path = PathBuf::from(&source);
+        let path = std::path::PathBuf::from(&source);
         if !path.exists() {
             panic!(
                 "BRAZEN_SERVO_SOURCE was set to `{}`, but the path does not exist",
