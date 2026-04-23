@@ -581,18 +581,23 @@ enum LeftPanelTab {
     Assets,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum DiagnosticTab {
+    Logs,
+    Network,
+    Dom,
+    Health,
+    Downloads,
+    Automation,
+    Cache,
+    Capabilities,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct WorkspacePanels {
     sidebar_visible: bool,
     bookmarks: bool,
     history: bool,
-    downloads: bool,
-    dom_inspector: bool,
-    network_inspector: bool,
-    cache_explorer: bool,
-    capability_inspector: bool,
-    automation_console: bool,
-    engine_health: bool,
     knowledge_graph: bool,
     reading_queue: bool,
     reader_mode: bool,
@@ -601,6 +606,9 @@ struct WorkspacePanels {
     terminal: bool,
     dashboard: bool,
     find_panel_open: bool,
+    bottom_panel_visible: bool,
+    active_diagnostic_tab: DiagnosticTab,
+    bottom_panel_height: f32,
 }
 
 impl Default for WorkspacePanels {
@@ -609,13 +617,6 @@ impl Default for WorkspacePanels {
             sidebar_visible: true,
             bookmarks: false,
             history: false,
-            downloads: false,
-            dom_inspector: false,
-            network_inspector: false,
-            cache_explorer: false,
-            capability_inspector: false,
-            automation_console: false,
-            engine_health: false,
             knowledge_graph: false,
             reading_queue: false,
             reader_mode: false,
@@ -624,6 +625,9 @@ impl Default for WorkspacePanels {
             terminal: false,
             dashboard: true,
             find_panel_open: false,
+            bottom_panel_visible: false,
+            active_diagnostic_tab: DiagnosticTab::Logs,
+            bottom_panel_height: 250.0,
         }
     }
 }
@@ -2152,59 +2156,47 @@ impl BrazenApp {
                 dashboard: true,
                 bookmarks: false,
                 history: false,
-                downloads: false,
-                dom_inspector: false,
-                network_inspector: false,
-                cache_explorer: false,
-                capability_inspector: false,
-                automation_console: false,
-                engine_health: false,
                 knowledge_graph: false,
                 reading_queue: false,
                 reader_mode: false,
                 tts_controls: false,
                 workspace_settings: false,
                 find_panel_open: false,
+                bottom_panel_visible: false,
+                active_diagnostic_tab: DiagnosticTab::Logs,
+                bottom_panel_height: 250.0,
             },
             LayoutPreset::Developer => WorkspacePanels {
                 sidebar_visible: true,
                 terminal: true,
                 dashboard: false,
-                dom_inspector: true,
-                network_inspector: true,
-                engine_health: true,
                 knowledge_graph: false,
                 reading_queue: false,
                 reader_mode: false,
                 tts_controls: false,
                 bookmarks: false,
                 history: true,
-                downloads: true,
                 workspace_settings: true,
-                cache_explorer: false,
-                capability_inspector: false,
-                automation_console: false,
                 find_panel_open: false,
+                bottom_panel_visible: true,
+                active_diagnostic_tab: DiagnosticTab::Network,
+                bottom_panel_height: 300.0,
             },
             LayoutPreset::Archive => WorkspacePanels {
                 sidebar_visible: true,
                 terminal: false,
                 dashboard: false,
-                cache_explorer: true,
-                capability_inspector: false,
-                automation_console: false,
-                dom_inspector: false,
-                network_inspector: false,
                 knowledge_graph: true,
                 reading_queue: true,
                 reader_mode: true,
                 tts_controls: true,
                 bookmarks: true,
                 history: true,
-                downloads: true,
-                engine_health: false,
                 workspace_settings: true,
                 find_panel_open: false,
+                bottom_panel_visible: true,
+                active_diagnostic_tab: DiagnosticTab::Cache,
+                bottom_panel_height: 280.0,
             },
         };
         self.shell_state
@@ -2269,21 +2261,23 @@ impl BrazenApp {
                         SettingsTab::Features => {
                             changed |= ui.checkbox(&mut self.panels.bookmarks, "Bookmarks").changed();
                             changed |= ui.checkbox(&mut self.panels.history, "History").changed();
-                            changed |= ui.checkbox(&mut self.panels.downloads, "Downloads").changed();
                             changed |= ui.checkbox(&mut self.panels.reading_queue, "Reading Queue").changed();
                             changed |= ui.checkbox(&mut self.panels.reader_mode, "Reader Mode").changed();
                             changed |= ui.checkbox(&mut self.panels.tts_controls, "TTS Controls").changed();
                         }
                         SettingsTab::DevTools => {
-                            changed |= ui.checkbox(&mut self.panels.dom_inspector, "DOM Inspector").changed();
-                            changed |= ui.checkbox(&mut self.panels.network_inspector, "Network Inspector").changed();
-                            changed |= ui.checkbox(&mut self.panels.cache_explorer, "Cache Explorer").changed();
-                            changed |= ui.checkbox(&mut self.panels.engine_health, "Engine Health").changed();
-                            changed |= ui.checkbox(&mut self.panels.knowledge_graph, "Knowledge Graph").changed();
+                            changed |= ui.checkbox(&mut self.panels.bottom_panel_visible, "Bottom Diagnostic Panel").changed();
+                            ui.separator();
+                            ui.label("Active Tab");
+                            changed |= ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Network, "Network").changed();
+                            changed |= ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Dom, "DOM Inspector").changed();
+                            changed |= ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Health, "Engine Health").changed();
+                            changed |= ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Cache, "Cache Explorer").changed();
+                            changed |= ui.checkbox(&mut self.panels.knowledge_graph, "Knowledge Graph (Window)").changed();
                         }
                         SettingsTab::Automation => {
-                            changed |= ui.checkbox(&mut self.panels.automation_console, "Automation Console").changed();
-                            changed |= ui.checkbox(&mut self.panels.capability_inspector, "Capability Inspector").changed();
+                            changed |= ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Automation, "Automation Console").changed();
+                            changed |= ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Capabilities, "Capability Inspector").changed();
                         }
                         SettingsTab::Appearance => {
                             ui.label("Theme");
@@ -2375,277 +2369,163 @@ impl BrazenApp {
         }
     }
 
-    fn render_engine_health_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.engine_health {
+    fn render_bottom_panel(&mut self, ctx: &eframe::egui::Context) {
+        if !self.panels.bottom_panel_visible {
             return;
         }
-        let mut open = true;
-        eframe::egui::Window::new("Engine Health")
-            .open(&mut open)
+
+        eframe::egui::TopBottomPanel::bottom("unified_bottom_panel")
+            .resizable(true)
+            .default_height(self.panels.bottom_panel_height)
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Status:");
-                    ui.monospace(self.shell_state.engine_status.to_string());
-                });
+                // Update persisted height
+                self.panels.bottom_panel_height = ui.available_height().max(100.0);
 
                 ui.horizontal(|ui| {
-                    ui.label("Upstream Active:");
-                    if self.shell_state.upstream_active {
-                        ui.label(
-                            eframe::egui::RichText::new("YES")
-                                .color(eframe::egui::Color32::from_rgb(0, 200, 0)),
-                        );
-                    } else {
-                        ui.label(
-                            eframe::egui::RichText::new("NO")
-                                .color(eframe::egui::Color32::from_rgb(255, 50, 50)),
-                        );
-                    }
-                });
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Logs, "Logs");
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Network, "Network");
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Dom, "DOM");
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Health, "Health");
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Downloads, "Downloads");
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Automation, "Automation");
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Cache, "Cache");
+                    ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Capabilities, "Capabilities");
 
-                if let Some(ready) = self.shell_state.resource_reader_ready {
-                    ui.horizontal(|ui| {
-                        ui.label("Resource Reader:");
-                        if ready {
-                            ui.label(
-                                eframe::egui::RichText::new("READY")
-                                    .color(eframe::egui::Color32::from_rgb(0, 200, 0)),
-                            );
-                        } else {
-                            ui.label(
-                                eframe::egui::RichText::new("PENDING")
-                                    .color(eframe::egui::Color32::from_rgb(255, 165, 0)),
-                            );
+                    ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
+                        if ui.button("❌").clicked() {
+                            self.panels.bottom_panel_visible = false;
                         }
                     });
-                }
-
-                if let Some(path) = &self.shell_state.resource_reader_path {
-                    ui.horizontal(|ui| {
-                        ui.label("Resource Path:");
-                        ui.monospace(path);
-                    });
-                }
-
-                if let Some(error) = &self.shell_state.upstream_last_error {
-                    ui.separator();
-                    ui.label(
-                        eframe::egui::RichText::new("Last Error:")
-                            .color(eframe::egui::Color32::from_rgb(255, 50, 50)),
-                    );
-                    ui.monospace(error);
-                }
-
-                if let Some(warning) = &self.shell_state.render_warning {
-                    ui.separator();
-                    ui.label(
-                        eframe::egui::RichText::new("Warning:")
-                            .color(eframe::egui::Color32::from_rgb(255, 165, 0)),
-                    );
-                    ui.label(warning);
-                }
-            });
-        if !open {
-            self.panels.engine_health = false;
-        }
-    }
-
-    fn render_downloads_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.downloads {
-            return;
-        }
-        let mut open = true;
-        eframe::egui::Window::new("Downloads")
-            .open(&mut open)
-            .show(ctx, |ui| {
-                if let Some(last) = &self.shell_state.last_download {
-                    ui.label(format!("Last: {last}"));
-                } else {
-                    ui.label("No downloads yet.");
-                }
-                ui.separator();
-                for item in &self.downloads {
-                    ui.monospace(item);
-                }
-                if ui.button("Add Sample Download").clicked() {
-                    self.downloads
-                        .push(format!("sample-{}.bin", self.downloads.len() + 1));
-                }
-            });
-        if !open {
-            self.panels.downloads = false;
-        }
-    }
-
-    fn render_dom_inspector_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.dom_inspector {
-            return;
-        }
-        let mut open = true;
-        eframe::egui::Window::new("DOM Inspector")
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(format!("URL: {}", self.shell_state.active_tab.current_url));
-                    if ui.button("Refresh Snapshot").clicked() {
-                        self.engine.evaluate_javascript(
-                            "document.documentElement.outerHTML".to_string(),
-                            Box::new(move |_result| {
-                                // Result will be handled by the next sync_from_engine
-                                // Wait, evaluate_javascript in ServoEngine currently doesn't emit an event with the result.
-                                // It just calls the callback.
-                                // I should make the callback emit an event.
-                            })
-                        );
-                    }
                 });
+
                 ui.separator();
-                if let Some(dom) = &self.shell_state.dom_snapshot {
-                    eframe::egui::ScrollArea::both().show(ui, |ui| {
-                        ui.add(
-                            eframe::egui::TextEdit::multiline(&mut dom.clone())
-                                .font(eframe::egui::TextStyle::Monospace)
-                                .desired_width(f32::INFINITY)
-                        );
-                    });
-                } else {
-                    ui.label("No DOM snapshot available. Click Refresh to capture.");
-                }
-            });
-        if !open {
-            self.panels.dom_inspector = false;
-        }
-    }
 
-    fn render_network_inspector_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.network_inspector {
-            return;
-        }
-        let mut open = true;
-        eframe::egui::Window::new("Network Inspector")
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(format!("Logged Requests: {}", self.shell_state.network_log.len()));
-                    if ui.button("Clear").clicked() {
-                        self.shell_state.network_log.clear();
-                    }
-                });
-                ui.separator();
-                eframe::egui::ScrollArea::vertical().show(ui, |ui| {
-                    eframe::egui::Grid::new("network_grid")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.label("Method");
-                            ui.label("Status");
-                            ui.label("Mime");
-                            ui.label("URL");
-                            ui.end_row();
-
-                            for req in self.shell_state.network_log.iter().rev() {
-                                ui.label(&req.method);
-                                ui.label(req.status.map(|s: u16| s.to_string()).unwrap_or_else(|| "-".to_string()));
-                                ui.label(req.mime_type.as_deref().unwrap_or("-"));
-                                ui.label(&req.url);
-                                ui.end_row();
-                            }
-                        });
-                });
-            });
-        if !open {
-            self.panels.network_inspector = false;
-        }
-    }
-
-    fn render_cache_explorer_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.cache_explorer {
-            return;
-        }
-        let mut open = true;
-        eframe::egui::Window::new("Cache Explorer")
-            .open(&mut open)
-            .show(ctx, |ui| {
-                self.render_cache_panel(ui);
-            });
-        if !open {
-            self.panels.cache_explorer = false;
-        }
-    }
-
-    fn render_capability_inspector_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.capability_inspector {
-            return;
-        }
-        let mut open = true;
-        eframe::egui::Window::new("Capability Inspector")
-            .open(&mut open)
-            .show(ctx, |ui| {
-                for (cap, decision) in &self.shell_state.capabilities_snapshot {
-                    ui.horizontal(|ui| {
-                        ui.label(cap);
-                        ui.monospace(decision);
-                    });
-                }
-            });
-        if !open {
-            self.panels.capability_inspector = false;
-        }
-    }
-
-    fn render_automation_console_panel(&mut self, ctx: &eframe::egui::Context) {
-        if !self.panels.automation_console {
-            return;
-        }
-        let mut open = true;
-        eframe::egui::Window::new("Automation Console")
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.heading("Activity Queue");
-                ui.separator();
-                
                 eframe::egui::ScrollArea::vertical()
-                    .max_height(200.0)
-                    .id_salt("automation_activity")
+                    .id_salt("bottom_panel_scroll")
                     .show(ui, |ui| {
-                    if self.shell_state.automation_activities.is_empty() {
-                        ui.label("No active commands.");
-                    }
-                    for activity in self.shell_state.automation_activities.iter().rev() {
-                        ui.horizontal(|ui| {
-                            ui.label(format!("[{}]", activity.timestamp));
-                            ui.monospace(&activity.command);
-                            
-                            let color = match activity.status {
-                                AutomationActivityStatus::Pending => eframe::egui::Color32::GRAY,
-                                AutomationActivityStatus::Running => eframe::egui::Color32::from_rgb(0, 150, 255),
-                                AutomationActivityStatus::Success => eframe::egui::Color32::from_rgb(0, 200, 0),
-                                AutomationActivityStatus::Failed => eframe::egui::Color32::from_rgb(255, 50, 50),
-                            };
-                            
-                            ui.label(eframe::egui::RichText::new(format!("{:?}", activity.status)).color(color));
-                        });
-                        if let Some(output) = &activity.output {
-                            ui.indent("output", |ui| {
-                                ui.monospace(output);
-                            });
+                        match self.panels.active_diagnostic_tab {
+                            DiagnosticTab::Logs => self.render_log_tab(ui),
+                            DiagnosticTab::Network => self.render_network_tab(ui),
+                            DiagnosticTab::Dom => self.render_dom_tab(ui),
+                            DiagnosticTab::Health => self.render_health_tab(ui),
+                            DiagnosticTab::Downloads => self.render_downloads_tab(ui),
+                            DiagnosticTab::Automation => self.render_automation_tab(ui),
+                            DiagnosticTab::Cache => self.render_cache_panel(ui),
+                            DiagnosticTab::Capabilities => self.render_capabilities_tab(ui),
                         }
-                    }
-                });
-                
-                ui.separator();
-                ui.heading("Raw Events");
-                eframe::egui::ScrollArea::vertical()
-                    .id_salt("raw_events")
-                    .show(ui, |ui| {
-                    for event in self.shell_state.event_log.iter().rev().take(50) {
-                        if event.contains("automation") {
-                            ui.monospace(event);
-                        }
-                    }
-                });
+                    });
             });
-        if !open {
-            self.panels.automation_console = false;
+    }
+
+    fn render_log_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.heading("Startup and Command Log");
+        if let Some(avg) = frame_average_ms(&self.frame_times) {
+            let last = self.last_frame_ms.map(|ms| format!("{ms:.1}ms")).unwrap_or_else(|| "n/a".to_string());
+            ui.label(format!("Frame timing: avg {avg:.1}ms (last {last})"));
+        }
+        for event in self.shell_state.event_log.iter().rev().take(128) {
+            ui.monospace(event);
+        }
+    }
+
+    fn render_health_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Status:");
+            ui.monospace(self.shell_state.engine_status.to_string());
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Upstream Active:");
+            let color = if self.shell_state.upstream_active { Color32::from_rgb(0, 200, 0) } else { Color32::from_rgb(255, 50, 50) };
+            ui.label(eframe::egui::RichText::new(if self.shell_state.upstream_active { "YES" } else { "NO" }).color(color));
+        });
+
+        if let Some(ready) = self.shell_state.resource_reader_ready {
+            ui.horizontal(|ui| {
+                ui.label("Resource Reader:");
+                let color = if ready { Color32::from_rgb(0, 200, 0) } else { Color32::from_rgb(255, 165, 0) };
+                ui.label(eframe::egui::RichText::new(if ready { "READY" } else { "PENDING" }).color(color));
+            });
+        }
+
+        if let Some(path) = &self.shell_state.resource_reader_path {
+            ui.horizontal(|ui| { ui.label("Resource Path:"); ui.monospace(path); });
+        }
+
+        if let Some(error) = &self.shell_state.upstream_last_error {
+            ui.separator();
+            ui.label(eframe::egui::RichText::new("Last Error:").color(Color32::from_rgb(255, 50, 50)));
+            ui.monospace(error);
+        }
+    }
+
+    fn render_downloads_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        if let Some(last) = &self.shell_state.last_download {
+            ui.label(format!("Last: {last}"));
+        } else {
+            ui.label("No downloads yet.");
+        }
+        ui.separator();
+        for item in &self.downloads {
+            ui.monospace(item);
+        }
+    }
+
+    fn render_dom_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(format!("URL: {}", self.shell_state.active_tab.current_url));
+            if ui.button("Refresh Snapshot").clicked() {
+                self.engine.evaluate_javascript("document.documentElement.outerHTML".to_string(), Box::new(|_| {}));
+            }
+        });
+        ui.separator();
+        if let Some(dom) = &self.shell_state.dom_snapshot {
+            ui.add(eframe::egui::TextEdit::multiline(&mut dom.clone())
+                .font(eframe::egui::TextStyle::Monospace)
+                .desired_width(f32::INFINITY));
+        } else {
+            ui.label("No DOM snapshot available.");
+        }
+    }
+
+    fn render_network_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(format!("Logged Requests: {}", self.shell_state.network_log.len()));
+            if ui.button("Clear").clicked() { self.shell_state.network_log.clear(); }
+        });
+        ui.separator();
+        eframe::egui::Grid::new("network_grid_bottom").striped(true).show(ui, |ui| {
+            ui.label("Method"); ui.label("Status"); ui.label("Mime"); ui.label("URL"); ui.end_row();
+            for req in self.shell_state.network_log.iter().rev() {
+                ui.label(&req.method);
+                ui.label(req.status.map(|s| s.to_string()).unwrap_or_else(|| "-".to_string()));
+                ui.label(req.mime_type.as_deref().unwrap_or("-"));
+                ui.label(&req.url);
+                ui.end_row();
+            }
+        });
+    }
+
+    fn render_capabilities_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        for (cap, decision) in &self.shell_state.capabilities_snapshot {
+            ui.horizontal(|ui| { ui.label(cap); ui.monospace(decision); });
+        }
+    }
+
+    fn render_automation_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.heading("Activity Queue");
+        for activity in self.shell_state.automation_activities.iter().rev() {
+            ui.horizontal(|ui| {
+                ui.label(format!("[{}]", activity.timestamp));
+                ui.monospace(&activity.command);
+                let color = match activity.status {
+                    AutomationActivityStatus::Pending => Color32::GRAY,
+                    AutomationActivityStatus::Running => Color32::from_rgb(0, 150, 255),
+                    AutomationActivityStatus::Success => Color32::from_rgb(0, 200, 0),
+                    AutomationActivityStatus::Failed => Color32::from_rgb(255, 50, 50),
+                };
+                ui.label(eframe::egui::RichText::new(format!("{:?}", activity.status)).color(color));
+            });
         }
     }
 
@@ -3041,15 +2921,57 @@ impl BrazenApp {
                     ui.checkbox(&mut self.panels.sidebar_visible, "Left Sidebar");
                     ui.checkbox(&mut self.panels.terminal, "Right Sidebar (Terminal)");
                     ui.separator();
-                    ui.menu_button("Panels", |ui| {
+                    ui.checkbox(&mut self.panels.bottom_panel_visible, "Bottom Panel");
+                    ui.menu_button("Diagnostic Tabs", |ui| {
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Logs, "Logs").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Logs;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Network, "Network").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Network;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Dom, "DOM Inspector").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Dom;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Health, "Engine Health").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Health;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Downloads, "Downloads").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Downloads;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Automation, "Automation").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Automation;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Cache, "Cache Explorer").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Cache;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Capabilities, "Capabilities").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Capabilities;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close_menu();
+                        }
+                    });
+                    ui.separator();
+                    ui.menu_button("Floating Windows", |ui| {
                         ui.checkbox(&mut self.panels.bookmarks, "Bookmarks");
                         ui.checkbox(&mut self.panels.history, "History");
-                        ui.checkbox(&mut self.panels.downloads, "Downloads");
-                        ui.separator();
-                        ui.checkbox(&mut self.panels.dom_inspector, "DOM Inspector");
-                        ui.checkbox(&mut self.panels.network_inspector, "Network Inspector");
-                        ui.checkbox(&mut self.panels.cache_explorer, "Cache Explorer");
-                        ui.checkbox(&mut self.panels.engine_health, "Engine Health");
+                        ui.checkbox(&mut self.panels.knowledge_graph, "Knowledge Graph");
+                        ui.checkbox(&mut self.panels.reading_queue, "Reading Queue");
+                        ui.checkbox(&mut self.panels.reader_mode, "Reader Mode");
+                        ui.checkbox(&mut self.panels.tts_controls, "TTS Controls");
                     });
                     ui.separator();
                     if ui.button("Reload").clicked() {
@@ -3658,49 +3580,16 @@ impl eframe::App for BrazenApp {
 
         self.sync_active_tab_from_session();
 
-        // --- Supplemental Panels ---
+        // --- Supplemental Windows ---
         self.render_workspace_settings(ctx);
         self.render_bookmarks_panel(ctx);
         self.render_history_panel(ctx);
-        self.render_downloads_panel(ctx);
-        self.render_dom_inspector_panel(ctx);
-        self.render_network_inspector_panel(ctx);
-        self.render_cache_explorer_panel(ctx);
-        self.render_capability_inspector_panel(ctx);
-        self.render_automation_console_panel(ctx);
-        self.render_engine_health_panel(ctx);
         self.render_knowledge_graph_panel(ctx);
         self.render_reading_queue_panel(ctx);
         self.render_reader_mode_panel(ctx);
         self.render_tts_controls_panel(ctx);
 
-        if self.shell_state.log_panel_open {
-            eframe::egui::TopBottomPanel::bottom("log_panel")
-                .resizable(true)
-                .default_height(180.0)
-                .show(ctx, |ui| {
-                    ui.heading("Startup and Command Log");
-                    if let Some(avg) = frame_average_ms(&self.frame_times) {
-                        let last = self
-                            .last_frame_ms
-                            .map(|ms| format!("{ms:.1}ms"))
-                            .unwrap_or_else(|| "n/a".to_string());
-                        ui.label(format!("Frame timing: avg {avg:.1}ms (last {last})"));
-                    }
-                    if let Some(avg) = frame_average_ms(&self.upload_times) {
-                        let last = self
-                            .last_upload_ms
-                            .map(|ms| format!("{ms:.1}ms"))
-                            .unwrap_or_else(|| "n/a".to_string());
-                        ui.label(format!("Frame upload: avg {avg:.1}ms (last {last})"));
-                    }
-                    eframe::egui::ScrollArea::vertical().show(ui, |ui| {
-                        for event in self.shell_state.event_log.iter().rev().take(128) {
-                            ui.monospace(event);
-                        }
-                    });
-                });
-        }
+        self.render_bottom_panel(ctx);
 
         if self.shell_state.find_panel_open {
             eframe::egui::TopBottomPanel::bottom("find_panel")
