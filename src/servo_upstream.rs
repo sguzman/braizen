@@ -23,7 +23,7 @@ use libservo::{
 use libservo::clipboard_delegate::{ClipboardDelegate, StringRequest};
 use tracing_log::LogTracer;
 use http::HeaderMap;
-use base64::Engine;
+use chrono::Utc;
 use crate::engine::EngineEvent;
 use crate::mounts::MountManager;
 use crate::session::SessionSnapshot;
