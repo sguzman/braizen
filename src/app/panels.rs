@@ -200,7 +200,7 @@ impl super::BrazenApp {
 
     fn render_log_tab(&mut self, ui: &mut eframe::egui::Ui) {
         ui.heading("Startup and Command Log");
-        if let Some(avg) = crate::app::frame_average_ms(&self.frame_times) {
+        if let Some(avg) = crate::app::ui_main::frame_average_ms(&self.frame_times) {
             let last = self.last_frame_ms.map(|ms| format!("{ms:.1}ms")).unwrap_or_else(|| "n/a".to_string());
             ui.label(format!("Frame timing: avg {avg:.1}ms (last {last})"));
         }

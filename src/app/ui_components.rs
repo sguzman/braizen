@@ -1,4 +1,6 @@
 use super::state::*;
+use crate::app::PaletteCommand;
+use crate::engine::EngineStatus;
 use crate::commands::{AppCommand, dispatch_command};
 use crate::engine::{RenderSurfaceMetadata};
 use crate::navigation::{normalize_url_input};
@@ -298,5 +300,255 @@ impl super::BrazenApp {
                 });
             });
         });
+    }
+
+    pub fn render_top_menu(&mut self, ctx: &eframe::egui::Context) {
+        eframe::egui::TopBottomPanel::top("top_menu_bar").show(ctx, |ui| {
+            eframe::egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("New Tab").clicked() {
+                        self.apply_palette_command(PaletteCommand::NewTab);
+                        ui.close();
+                    }
+                    if ui.button("Close Tab").clicked() {
+                        self.apply_palette_command(PaletteCommand::CloseTab);
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Quit").clicked() {
+                        ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+                    }
+                });
+                ui.menu_button("Edit", |ui| {
+                    if ui.button("Copy URL").clicked() {
+                        if let Some(url) = self.shell_state.last_committed_url.as_deref() {
+                            ctx.copy_text(url.to_string());
+                        }
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Find...").clicked() {
+                        self.shell_state.find_panel_open = true;
+                        ui.close();
+                    }
+                });
+                ui.menu_button("View", |ui| {
+                    ui.checkbox(&mut self.panels.dashboard, "Dashboard");
+                    ui.checkbox(&mut self.panels.sidebar_visible, "Left Sidebar");
+                    ui.checkbox(&mut self.panels.terminal, "Right Sidebar (Terminal)");
+                    ui.separator();
+                    ui.checkbox(&mut self.panels.bottom_panel_visible, "Bottom Panel");
+                    ui.menu_button("Diagnostic Tabs", |ui| {
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Logs, "Logs").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Logs;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Network, "Network").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Network;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Dom, "DOM Inspector").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Dom;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Health, "Engine Health").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Health;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Downloads, "Downloads").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Downloads;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Automation, "Automation").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Automation;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Cache, "Cache Explorer").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Cache;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                        if ui.selectable_label(self.panels.active_diagnostic_tab == DiagnosticTab::Capabilities, "Capabilities").clicked() {
+                            self.panels.active_diagnostic_tab = DiagnosticTab::Capabilities;
+                            self.panels.bottom_panel_visible = true;
+                            ui.close();
+                        }
+                    });
+                    ui.separator();
+                    ui.menu_button("Floating Windows", |ui| {
+                        ui.checkbox(&mut self.panels.bookmarks, "Bookmarks");
+                        ui.checkbox(&mut self.panels.history, "History");
+                        ui.checkbox(&mut self.panels.reading_queue, "Reading Queue");
+                        ui.checkbox(&mut self.panels.reader_mode, "Reader Mode");
+                        ui.checkbox(&mut self.panels.tts_controls, "TTS Controls");
+                    });
+                    ui.separator();
+                    if ui.button("Reload").clicked() {
+                        self.apply_palette_command(PaletteCommand::Reload);
+                        ui.close();
+                    }
+                });
+                ui.menu_button("Tools", |ui| {
+                    ui.checkbox(&mut self.shell_state.observe_dom, "Observe DOM");
+                    ui.checkbox(&mut self.shell_state.control_terminal, "Control Terminal");
+                    ui.checkbox(&mut self.shell_state.use_mcp_tools, "Use MCP Tools");
+                    ui.separator();
+                    if ui.button("Settings").clicked() {
+                        self.panels.workspace_settings = true;
+                        ui.close();
+                    }
+                });
+                
+                ui.with_layout(eframe::egui::Layout::right_to_left(eframe::egui::Align::Center), |ui| {
+                    if let Some(status) = &self.shell_state.load_status {
+                         ui.label(eframe::egui::RichText::new(status.as_str()).small());
+                    }
+                    if self.shell_state.engine_status != EngineStatus::Ready {
+                         ui.spinner();
+                    }
+                });
+            });
+        });
+    }
+
+    pub fn render_command_palette(&mut self, ctx: &eframe::egui::Context) {
+        if !self.command_palette_open {
+            return;
+        }
+        let mut open = true;
+        let mut close_requested = false;
+        eframe::egui::Window::new("Command Palette")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .anchor(
+                eframe::egui::Align2::CENTER_TOP,
+                eframe::egui::vec2(0.0, 24.0),
+            )
+            .show(ctx, |ui| {
+                let response = ui.add(
+                    eframe::egui::TextEdit::singleline(&mut self.command_palette_query)
+                        .hint_text("Type a command"),
+                );
+                if self.command_palette_focus_pending {
+                    response.request_focus();
+                    self.command_palette_focus_pending = false;
+                }
+                let query = self.command_palette_query.trim().to_lowercase();
+                let entries = Self::palette_entries()
+                    .iter()
+                    .filter(|entry| entry.label.to_lowercase().contains(&query))
+                    .collect::<Vec<_>>();
+                ui.separator();
+                for entry in entries.iter().take(8) {
+                    if ui.button(entry.label).clicked() {
+                        self.apply_palette_command(entry.action);
+                        close_requested = true;
+                    }
+                }
+                if ui.input(|input| input.key_pressed(eframe::egui::Key::Enter)) {
+                    if let Some(entry) = entries.first() {
+                        self.apply_palette_command(entry.action);
+                    }
+                    close_requested = true;
+                }
+                if ui.input(|input| input.key_pressed(eframe::egui::Key::Escape)) {
+                    close_requested = true;
+                }
+            });
+        if close_requested {
+            open = false;
+        }
+        if !open {
+            self.command_palette_open = false;
+        }
+    }
+
+    pub fn render_context_menu(&mut self, ctx: &eframe::egui::Context) {
+        let Some((x, y)) = self.shell_state.pending_context_menu else {
+            return;
+        };
+        let mut close_menu = false;
+        let screen = ctx.viewport_rect();
+        let mut pos = eframe::egui::pos2(x, y);
+        let max_x = (screen.right() - 200.0).max(screen.left());
+        let max_y = (screen.bottom() - 200.0).max(screen.top());
+        pos.x = pos.x.clamp(screen.left(), max_x);
+        pos.y = pos.y.clamp(screen.top(), max_y);
+
+        let response = eframe::egui::Area::new(eframe::egui::Id::new("context_menu"))
+            .order(eframe::egui::Order::Foreground)
+            .fixed_pos(pos)
+            .show(ctx, |ui| {
+                let frame = eframe::egui::Frame::popup(ui.style());
+                frame.show(ui, |ui| {
+                    ui.set_min_width(180.0);
+                    let current_url = self.shell_state.active_tab.current_url.clone();
+                    if ui.button("Copy URL").clicked() {
+                        ctx.copy_text(current_url.clone());
+                        self.shell_state.record_event("context menu: copy url");
+                        close_menu = true;
+                    }
+                    if ui.button("Open In New Tab").clicked() {
+                        {
+                            let mut session = self.shell_state.session.write().unwrap();
+                            session.open_new_tab(&current_url, "New Tab");
+                            session.active_tab_mut().zoom_level = self.config.engine.zoom_default;
+                        }
+                        self.shell_state.active_tab_zoom = self.config.engine.zoom_default;
+                        self.shell_state.address_bar_input = current_url.clone();
+                        let _ = dispatch_command(
+                            &mut self.shell_state,
+                            self.engine.as_mut(),
+                            AppCommand::NavigateTo(current_url),
+                        );
+                        self.shell_state
+                            .record_event("context menu: open in new tab");
+                        close_menu = true;
+                    }
+                    if ui.button("Reload").clicked() {
+                        let _ = dispatch_command(
+                            &mut self.shell_state,
+                            self.engine.as_mut(),
+                            AppCommand::ReloadActiveTab,
+                        );
+                        close_menu = true;
+                    }
+                    if ui.button("Save Snapshot").clicked() {
+                        self.save_snapshot_to_disk();
+                        close_menu = true;
+                    }
+                    ui.separator();
+                    if ui.button("Zoom In").clicked() {
+                        self.apply_zoom_steps(1, "context menu");
+                        close_menu = true;
+                    }
+                    if ui.button("Zoom Out").clicked() {
+                        self.apply_zoom_steps(-1, "context menu");
+                        close_menu = true;
+                    }
+                    if ui.button("Reset Zoom").clicked() {
+                        self.set_active_tab_zoom(self.config.engine.zoom_default, "reset");
+                        close_menu = true;
+                    }
+                });
+            });
+
+        if ctx.input(|input| input.pointer.any_pressed())
+            && let Some(pos) = ctx.input(|input| input.pointer.latest_pos())
+            && !response.response.rect.contains(pos)
+        {
+            close_menu = true;
+        }
+
+        if close_menu {
+            self.shell_state.pending_context_menu = None;
+        }
     }
 }
