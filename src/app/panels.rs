@@ -537,4 +537,38 @@ impl super::BrazenApp {
             self.panels.tts_controls = false;
         }
     }
+
+    pub fn render_find_panel(&mut self, ctx: &eframe::egui::Context) {
+        if !self.shell_state.find_panel_open {
+            return;
+        }
+        eframe::egui::TopBottomPanel::bottom("find_panel")
+            .resizable(false)
+            .default_height(64.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Find");
+                    let response = ui.text_edit_singleline(&mut self.shell_state.find_query);
+                    let enter_pressed =
+                        ui.input(|input| input.key_pressed(eframe::egui::Key::Enter));
+                    if response.changed() && !self.shell_state.find_query.is_empty() {
+                        self.shell_state.record_event(format!(
+                            "find query: {}",
+                            self.shell_state.find_query
+                        ));
+                    }
+                    if (response.lost_focus() && enter_pressed)
+                        || ui.button("Find Next").clicked()
+                    {
+                        self.shell_state.record_event(format!(
+                            "find next: {}",
+                            self.shell_state.find_query
+                        ));
+                    }
+                    if ui.button("❌").clicked() {
+                        self.shell_state.find_panel_open = false;
+                    }
+                });
+            });
+    }
 }

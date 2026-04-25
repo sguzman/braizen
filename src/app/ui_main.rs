@@ -97,6 +97,9 @@ impl eframe::App for super::BrazenApp {
         self.render_top_menu(ctx);
         self.render_header(ctx);
         
+        self.render_bottom_panel(ctx);
+        self.render_find_panel(ctx);
+        
         if self.panels.dashboard {
             self.render_dashboard(ctx);
         } else {
@@ -112,38 +115,6 @@ impl eframe::App for super::BrazenApp {
         self.render_reader_mode_panel(ctx);
         self.render_tts_controls_panel(ctx);
 
-        self.render_bottom_panel(ctx);
-
-        if self.shell_state.find_panel_open {
-            eframe::egui::TopBottomPanel::bottom("find_panel")
-                .resizable(false)
-                .default_height(64.0)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Find");
-                        let response = ui.text_edit_singleline(&mut self.shell_state.find_query);
-                        let enter_pressed =
-                            ui.input(|input| input.key_pressed(eframe::egui::Key::Enter));
-                        if response.changed() && !self.shell_state.find_query.is_empty() {
-                            self.shell_state.record_event(format!(
-                                "find query: {}",
-                                self.shell_state.find_query
-                            ));
-                        }
-                        if (response.lost_focus() && enter_pressed)
-                            || ui.button("Find Next").clicked()
-                        {
-                            self.shell_state.record_event(format!(
-                                "find next: {}",
-                                self.shell_state.find_query
-                            ));
-                        }
-                        if ui.button("Close").clicked() {
-                            self.shell_state.find_panel_open = false;
-                        }
-                    });
-                });
-        }
 
         self.render_command_palette(ctx);
         self.render_context_menu(ctx);
