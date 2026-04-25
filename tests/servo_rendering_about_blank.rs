@@ -16,6 +16,9 @@ mod tests {
             resources_dir: None,
             certificate_path: None,
             ignore_certificate_errors: false,
+            cookies_path: None,
+            storage_path: None,
+            cache_path: None,
         };
         let (tx, _) = std::sync::mpsc::channel();
         let mount_manager = MountManager::new();

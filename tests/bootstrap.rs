@@ -1,6 +1,6 @@
 use brazen::commands::{AppCommand, CommandOutcome, dispatch_command};
 use brazen::config::{BrazenConfig, LoggingConfig, default_config_toml};
-use brazen::engine::{BrowserEngine, BrowserTab, EngineEvent, EngineStatus, NullEngine};
+use brazen::engine::{BrowserEngine, BrowserTab, EngineEvent, EngineStatus, ScaffoldEngine};
 use brazen::logging::{LoggingPlan, init_tracing};
 use brazen::permissions::{Capability, PermissionDecision};
 use brazen::platform_paths::PlatformPaths;
@@ -17,7 +17,7 @@ impl EngineFactory for TestFactory {
         _mount_manager: brazen::mounts::MountManager,
         _session: std::sync::Arc<std::sync::RwLock<brazen::session::SessionSnapshot>>,
     ) -> Box<dyn BrowserEngine> {
-        Box::new(NullEngine::new())
+        Box::new(ScaffoldEngine::new())
     }
 }
 
@@ -305,11 +305,20 @@ fn command_dispatch_routes_navigation_and_panel_state() {
         visit_counts: std::collections::HashMap::new(),
         visit_total: 0,
         revisit_total: 0,
+        dom_snapshot: None,
+        network_log: std::collections::VecDeque::new(),
+        extracted_entities: Vec::new(),
+        terminal_history: Vec::new(),
+        terminal_input: String::new(),
+        terminal_busy: false,
+        observe_dom: false,
+        control_terminal: false,
+        use_mcp_tools: false,
         pending_window_screenshot: std::sync::Arc::new(std::sync::Mutex::new(None)),
         mount_manager: brazen::mounts::MountManager::new(),
         runtime_paths,
     };
-    let mut engine = NullEngine::new();
+    let mut engine = ScaffoldEngine::new();
 
     let outcome = dispatch_command(
         &mut shell,
@@ -408,11 +417,20 @@ fn command_dispatch_rejects_invalid_urls() {
         visit_counts: std::collections::HashMap::new(),
         visit_total: 0,
         revisit_total: 0,
+        dom_snapshot: None,
+        network_log: std::collections::VecDeque::new(),
+        extracted_entities: Vec::new(),
+        terminal_history: Vec::new(),
+        terminal_input: String::new(),
+        terminal_busy: false,
+        observe_dom: false,
+        control_terminal: false,
+        use_mcp_tools: false,
         pending_window_screenshot: std::sync::Arc::new(std::sync::Mutex::new(None)),
         mount_manager: brazen::mounts::MountManager::new(),
         runtime_paths,
     };
-    let mut engine = NullEngine::new();
+    let mut engine = ScaffoldEngine::new();
 
     let outcome = dispatch_command(
         &mut shell,
@@ -468,7 +486,7 @@ bind = "http://127.0.0.1:9999"
 
 #[test]
 fn null_engine_emits_navigation_event() {
-    let mut engine = NullEngine::new();
+    let mut engine = ScaffoldEngine::new();
     engine.navigate("https://example.com");
     let events = engine.take_events();
     assert!(events.iter().any(|event| {

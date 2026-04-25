@@ -317,12 +317,18 @@ impl BrazenApp {
                     };
                     if !suppress_engine_input {
                         if pressed {
+                            if input_logging {
+                                tracing::trace!(target: "brazen::input", key = %key_name, ?modifiers, repeat = repeat, "forwarding KeyDown to engine");
+                            }
                             self.engine.handle_input(InputEvent::KeyDown {
                                 key: key_name,
                                 modifiers,
                                 repeat,
                             });
                         } else {
+                            if input_logging {
+                                tracing::trace!(target: "brazen::input", key = %key_name, ?modifiers, "forwarding KeyUp to engine");
+                            }
                             self.engine.handle_input(InputEvent::KeyUp {
                                 key: key_name,
                                 modifiers,
@@ -334,12 +340,15 @@ impl BrazenApp {
                     if suppress_engine_input {
                         continue;
                     }
+                    if input_logging {
+                        tracing::trace!(target: "brazen::input", text = %text, "text input event received");
+                    }
                     
                     // SUPPRESS single-character text input to avoid "double typing".
                     // Servo's KeyboardEvent (KeyDown) already handles printable characters.
                     if text.chars().count() == 1 {
                         if input_logging {
-                            tracing::trace!(target: "brazen::input", text = %text, "suppressing single-char text input to avoid duplication");
+                            tracing::trace!(target: "brazen::input", text = %text, "suppressing single-char text input to avoid duplication in engine");
                         }
                         continue;
                     }

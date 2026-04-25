@@ -132,6 +132,8 @@ use super::*;
         ) {
             callback(Ok(()));
         }
+
+        fn select_all(&mut self) {}
     }
 
     #[test]
@@ -202,6 +204,12 @@ use super::*;
             dom_snapshot: None,
             network_log: VecDeque::new(),
             extracted_entities: Vec::new(),
+            terminal_history: Vec::new(),
+            terminal_input: String::new(),
+            terminal_busy: false,
+            observe_dom: false,
+            control_terminal: false,
+            use_mcp_tools: false,
         };
 
         let mut ready_engine = MockEngine {

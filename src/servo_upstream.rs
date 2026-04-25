@@ -13,12 +13,14 @@ use crate::servo_resources::{
 };
 use dpi::PhysicalSize;
 use libservo::{
-    Code, CompositionEvent, CompositionState, DeviceIntPoint, DeviceIntRect, DeviceIntSize,
-    DevicePoint, EventLoopWaker, ImeEvent, InputEvent, Key, KeyState, KeyboardEvent, LoadStatus,
-    Location, Modifiers, MouseButton, MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent,
-    MouseMoveEvent, NamedKey, Opts, RenderingContext, Servo, ServoBuilder, ServoDelegate,
-    SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate, WebViewPoint, WheelDelta,
+    CompositionState, Key, KeyState, Location, Modifiers, NamedKey, Opts, Servo, ServoBuilder,
+    ServoDelegate, WebView, WebViewBuilder, WebViewDelegate, prefs,
+    Code, CompositionEvent, DeviceIntPoint, DeviceIntRect, DeviceIntSize,
+    DevicePoint, EventLoopWaker, ImeEvent, InputEvent, KeyboardEvent, LoadStatus,
+    MouseButton, MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent,
+    MouseMoveEvent, WebViewPoint, WheelDelta,
     WheelEvent, WheelMode, WebResourceLoad, WebResourceResponse,
+    RenderingContext, SoftwareRenderingContext,
 };
 use libservo::clipboard_delegate::{ClipboardDelegate, StringRequest};
 use tracing_log::LogTracer;
@@ -377,20 +379,16 @@ impl ServoUpstreamRuntime {
         if let Some(cache_dir) = &config.cache_path {
             std::fs::create_dir_all(cache_dir).ok();
         }
-        let opts = Opts {
-            ignore_certificate_errors: config.ignore_certificate_errors,
-            certificate_path: resolved_certificate_path
-                .as_ref()
-                .map(|path| path.display().to_string()),
-            config_dir: config
-                .storage_path
-                .as_ref()
-                .and_then(|p| p.parent().map(|p| p.to_path_buf())),
-            user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Brazen/0.1.0".to_string(),
-            cache_dir: config.cache_path.clone(),
-            cookie_file: config.cookies_path.clone(),
-            ..Opts::default()
-        };
+        let mut opts = libservo::Opts::default();
+        opts.ignore_certificate_errors = config.ignore_certificate_errors;
+        opts.certificate_path = resolved_certificate_path.as_ref().map(|p| p.display().to_string());
+        opts.config_dir = config.storage_path.as_ref().and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+        // Set preferences
+        let mut preferences = prefs::get().clone();
+        preferences.user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36".to_string();
+        prefs::set(preferences);
+
         let frame_ready = Arc::new(AtomicBool::new(true));
         let rendering_context = Rc::new(
             SoftwareRenderingContext::new(PhysicalSize::new(width, height))
@@ -663,6 +661,15 @@ impl ServoUpstreamRuntime {
     }
 
     pub fn handle_keyboard(&self, key: &str, pressed: bool, modifiers: KeyModifiers, repeat: bool) {
+        tracing::trace!(
+            target: "brazen::servo::input",
+            key = %key,
+            pressed = pressed,
+            modifiers = ?modifiers,
+            repeat = repeat,
+            "keyboard event received in upstream runtime"
+        );
+
         let state = if pressed {
             KeyState::Down
         } else {

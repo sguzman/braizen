@@ -49,6 +49,7 @@ impl BrowserEngine for MockEngine {
     fn go_back(&mut self) {}
     fn go_forward(&mut self) {}
     fn attach_surface(&mut self, _handle: RenderSurfaceHandle) {}
+    fn select_all(&mut self) {}
 }
 
 fn create_mock_shell_state() -> ShellState {
@@ -119,6 +120,15 @@ fn create_mock_shell_state() -> ShellState {
             audit_log_path: root.join("audit.log"),
         },
         pending_window_screenshot: Arc::new(std::sync::Mutex::new(None)),
+        dom_snapshot: None,
+        network_log: std::collections::VecDeque::new(),
+        extracted_entities: Vec::new(),
+        terminal_history: Vec::new(),
+        terminal_input: String::new(),
+        terminal_busy: false,
+        observe_dom: false,
+        control_terminal: false,
+        use_mcp_tools: false,
     }
 }
 
