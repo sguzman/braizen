@@ -154,12 +154,12 @@ impl super::BrazenApp {
             return;
         }
 
-        let response = eframe::egui::TopBottomPanel::bottom("unified_bottom_panel")
+        let inner_response = eframe::egui::TopBottomPanel::bottom("unified_bottom_panel")
             .resizable(true)
             .min_height(100.0)
             .default_height(self.panels.bottom_panel_height)
             .show(ctx, |ui| {
-                ui.set_height(self.panels.bottom_panel_height);
+                ui.set_min_height(self.panels.bottom_panel_height);
 
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Logs, "Logs");
@@ -197,10 +197,9 @@ impl super::BrazenApp {
                         }
                     });
             });
-
-        if response.response.dragged() || response.response.changed() {
-            self.panels.bottom_panel_height = response.response.rect.height();
-        }
+        
+        // Sync height back to panels state
+        self.panels.bottom_panel_height = inner_response.response.rect.height();
     }
 
     fn render_log_tab(&mut self, ui: &mut eframe::egui::Ui) {

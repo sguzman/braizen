@@ -25,6 +25,7 @@ pub struct BrazenConfig {
     pub media: MediaConfig,
     pub features: FeatureFlags,
     pub mcp: McpConfig,
+    pub shortcuts: ShortcutsConfig,
 }
 
 impl BrazenConfig {
@@ -764,4 +765,22 @@ pub struct ExternalMcpServerConfig {
     pub args: Vec<String>,
     #[serde(default)]
     pub env: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ShortcutsConfig {
+    pub select_all: String,
+    pub copy: String,
+    pub paste: String,
+}
+
+impl Default for ShortcutsConfig {
+    fn default() -> Self {
+        Self {
+            select_all: "Control+A".to_string(),
+            copy: "Control+C".to_string(),
+            paste: "Control+V".to_string(),
+        }
+    }
 }

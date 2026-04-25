@@ -370,23 +370,25 @@ impl ServoUpstreamRuntime {
             "servo network configuration"
         );
         libservo::resources::set(Box::new(ServoResourceReader::new(path.clone())));
+        
+        if let Some(config_dir) = config.storage_path.as_ref().and_then(|p| p.parent()) {
+            std::fs::create_dir_all(config_dir).ok();
+        }
+        if let Some(cache_dir) = &config.cache_path {
+            std::fs::create_dir_all(cache_dir).ok();
+        }
         let opts = Opts {
             ignore_certificate_errors: config.ignore_certificate_errors,
             certificate_path: resolved_certificate_path
                 .as_ref()
                 .map(|path| path.display().to_string()),
-            cookies_path: config
-                .cookies_path
-                .as_ref()
-                .map(|path| path.display().to_string()),
-            storage_path: config
+            config_dir: config
                 .storage_path
                 .as_ref()
-                .map(|path| path.display().to_string()),
-            cache_path: config
-                .cache_path
-                .as_ref()
-                .map(|path| path.display().to_string()),
+                .and_then(|p| p.parent().map(|p| p.to_path_buf())),
+            user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Brazen/0.1.0".to_string(),
+            cache_dir: config.cache_path.clone(),
+            cookie_file: config.cookies_path.clone(),
             ..Opts::default()
         };
         let frame_ready = Arc::new(AtomicBool::new(true));
@@ -498,6 +500,16 @@ impl ServoUpstreamRuntime {
         self.rendering_context
             .resize(PhysicalSize::new(width, height));
         self.frame_ready.store(true, Ordering::Release);
+    }
+
+    pub fn select_all(&self) {
+        let script = "document.execCommand('selectAll', false, null);".to_string();
+        let webview_id = self.webview.id();
+        self.servo.javascript_evaluator_mut().evaluate(
+            webview_id,
+            script,
+            Box::new(|_| {}),
+        );
     }
 
     pub fn navigate(&self, url: &str) -> Result<(), String> {

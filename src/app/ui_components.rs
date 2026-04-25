@@ -5,6 +5,37 @@ use crate::commands::{AppCommand, dispatch_command};
 use crate::engine::{RenderSurfaceMetadata};
 use crate::navigation::{normalize_url_input};
 
+fn beautify_url(url: &str) -> String {
+    if url == "about:blank" {
+        return "New Tab".to_string();
+    }
+    if let Ok(parsed) = url::Url::parse(url) {
+        if let Some(host) = parsed.host_str() {
+            let mut label = host.to_string();
+            if label.starts_with("www.") {
+                label = label[4..].to_string();
+            }
+            let path = parsed.path();
+            if path != "/" && !path.is_empty() {
+                // Only take the first part of the path if it's long
+                let path_part = path.trim_start_matches('/');
+                if path_part.len() > 15 {
+                    label.push_str(&format!("/{}...", &path_part[..12]));
+                } else {
+                    label.push_str(path);
+                }
+            }
+            return label;
+        }
+    }
+    // Truncate long raw URLs
+    if url.len() > 30 {
+        format!("{}...", &url[..27])
+    } else {
+        url.to_string()
+    }
+}
+
 impl super::BrazenApp {
     pub fn render_browser_view(&mut self, ctx: &eframe::egui::Context) {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
@@ -177,6 +208,7 @@ impl super::BrazenApp {
         }
         eframe::egui::SidePanel::left("left_sidebar")
             .resizable(true)
+            .width_range(200.0..=500.0)
             .default_width(260.0)
             .show(ctx, |ui| {
                 ui.add_space(8.0);
@@ -214,15 +246,11 @@ impl super::BrazenApp {
                         };
                         eframe::egui::ScrollArea::vertical().id_salt("left_workspace_scroll").show(ui, |ui| {
                             for (index, tab) in tabs.iter().enumerate() {
-                                let mut title = tab.title.clone();
-                                if title.starts_with("http") && title.len() > 40 {
-                                    if let Ok(url) = url::Url::parse(&title) {
-                                        title = format!("{}...", url.host_str().unwrap_or(&title));
-                                    } else {
-                                        title.truncate(37);
-                                        title.push_str("...");
-                                    }
-                                }
+                                let title = if tab.title.is_empty() || tab.title == "Servo" || tab.title.starts_with("http") {
+                                    beautify_url(&tab.url)
+                                } else {
+                                    tab.title.clone()
+                                };
 
                                 let label = format!(
                                     "{}{} {}",

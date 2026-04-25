@@ -213,12 +213,23 @@ impl BrazenApp {
                     let mut handled_shortcut = false;
                     if pressed && is_command {
                         match key {
-                            eframe::egui::Key::C | eframe::egui::Key::X | eframe::egui::Key::V | eframe::egui::Key::A => {
-                                // Let these fall through to the engine so it can handle clipboard/selection internally
-                                // However, we still record the event for shell history
-                                self.shell_state
-                                    .record_event(format!("shortcut {:?} => engine", key));
-                                handled_shortcut = false; // FALL THROUGH
+                            eframe::egui::Key::A => {
+                                self.engine.select_all();
+                                self.shell_state.record_event("shortcut: select all");
+                                handled_shortcut = true;
+                            }
+                            eframe::egui::Key::C => {
+                                // Servo handles copy internally if we pass the key event, 
+                                // but we ensure it falls through.
+                                self.shell_state.record_event("shortcut: copy");
+                            }
+                            eframe::egui::Key::V => {
+                                // For paste, we might need to read the clipboard and send TextInput
+                                // but Servo also handles it if we pass the key event.
+                                self.shell_state.record_event("shortcut: paste");
+                            }
+                            eframe::egui::Key::X => {
+                                self.shell_state.record_event("shortcut: cut");
                             }
                             eframe::egui::Key::F => {
                                 self.shell_state.find_panel_open = true;
@@ -311,17 +322,13 @@ impl BrazenApp {
                         continue;
                     }
                     
-                    // SKIP single-character text input if it was likely already handled by KeyDown
-                    // This is a common cause of "double typing" in egui/servo integrations.
-                    // We only pass multi-character text (like IME) or special characters.
+                    // SUPPRESS single-character text input to avoid "double typing".
+                    // Servo's KeyboardEvent (KeyDown) already handles printable characters.
                     if text.chars().count() == 1 {
-                        let c = text.chars().next().unwrap();
-                        if c.is_alphanumeric() || c.is_ascii_punctuation() || c == ' ' {
-                            if input_logging {
-                                tracing::trace!(target: "brazen::input", text = %text, "suppressing redundant single-char text input");
-                            }
-                            continue;
+                        if input_logging {
+                            tracing::trace!(target: "brazen::input", text = %text, "suppressing single-char text input to avoid duplication");
                         }
+                        continue;
                     }
 
                     if input_logging {

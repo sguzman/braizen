@@ -482,6 +482,13 @@ impl ServoEmbedder {
         }
     }
 
+    pub fn select_all(&mut self) {
+        #[cfg(feature = "servo-upstream")]
+        if let Some(upstream) = &self.upstream {
+            upstream.select_all();
+        }
+    }
+
     pub fn handle_input(&mut self, event: &InputEvent) {
         if self.verbose_logging {
             tracing::trace!(target: "brazen::servo", ?event, "input forwarded");

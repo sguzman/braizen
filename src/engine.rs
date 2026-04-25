@@ -379,6 +379,7 @@ pub trait BrowserEngine {
     fn interact_dom(&mut self, selector: String, event: String, value: Option<String>, callback: Box<dyn FnOnce(Result<(), String>) + Send + 'static>);
     fn take_screenshot(&mut self) -> Result<EngineFrame, String>;
     fn health(&self) -> RenderHealth;
+    fn select_all(&mut self);
 }
 
 
@@ -639,6 +640,8 @@ impl BrowserEngine for ScaffoldEngine {
             pixels,
         })
     }
+
+    fn select_all(&mut self) {}
 }
 use std::sync::{Arc, RwLock};
 use crate::session::SessionSnapshot;
@@ -1130,5 +1133,8 @@ impl BrowserEngine for ServoEngine {
     fn take_screenshot(&mut self) -> Result<EngineFrame, String> {
         self.embedder.render_frame()
             .ok_or_else(|| "No frame available".to_string())
+    }
+    fn select_all(&mut self) {
+        self.embedder.select_all();
     }
 }
