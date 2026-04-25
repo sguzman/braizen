@@ -9,6 +9,7 @@ impl super::BrazenApp {
     pub fn render_browser_view(&mut self, ctx: &eframe::egui::Context) {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             let available = ui.available_size();
+            let available = eframe::egui::vec2(available.x.floor(), available.y.floor());
             let (rect, _response_opt) = if let Some(texture) = &self.render_texture {
                 let response = ui.add(
                     eframe::egui::Image::from_texture(texture)
@@ -213,11 +214,21 @@ impl super::BrazenApp {
                         };
                         eframe::egui::ScrollArea::vertical().id_salt("left_workspace_scroll").show(ui, |ui| {
                             for (index, tab) in tabs.iter().enumerate() {
+                                let mut title = tab.title.clone();
+                                if title.starts_with("http") && title.len() > 40 {
+                                    if let Ok(url) = url::Url::parse(&title) {
+                                        title = format!("{}...", url.host_str().unwrap_or(&title));
+                                    } else {
+                                        title.truncate(37);
+                                        title.push_str("...");
+                                    }
+                                }
+
                                 let label = format!(
                                     "{}{} {}",
                                     if index == active_index { ">" } else { " " },
                                     if tab.pinned { "📌" } else { "  " },
-                                    tab.title
+                                    title
                                 );
                                 if ui.selectable_label(index == active_index, label).clicked() {
                                     self.shell_state.session.write().unwrap().set_active_tab(index);
@@ -494,12 +505,12 @@ impl super::BrazenApp {
                 frame.show(ui, |ui| {
                     ui.set_min_width(180.0);
                     let current_url = self.shell_state.active_tab.current_url.clone();
-                    if ui.button("Copy URL").clicked() {
+                    if ui.button("📋 Copy URL").clicked() {
                         ctx.copy_text(current_url.clone());
                         self.shell_state.record_event("context menu: copy url");
                         close_menu = true;
                     }
-                    if ui.button("Open In New Tab").clicked() {
+                    if ui.button("🌐 Open In New Tab").clicked() {
                         {
                             let mut session = self.shell_state.session.write().unwrap();
                             session.open_new_tab(&current_url, "New Tab");
@@ -516,7 +527,7 @@ impl super::BrazenApp {
                             .record_event("context menu: open in new tab");
                         close_menu = true;
                     }
-                    if ui.button("Reload").clicked() {
+                    if ui.button("🔄 Reload").clicked() {
                         let _ = dispatch_command(
                             &mut self.shell_state,
                             self.engine.as_mut(),
@@ -524,23 +535,30 @@ impl super::BrazenApp {
                         );
                         close_menu = true;
                     }
-                    if ui.button("Save Snapshot").clicked() {
+                    ui.separator();
+                    if ui.button("🔍 Find...").clicked() {
+                        self.shell_state.find_panel_open = true;
+                        close_menu = true;
+                    }
+                    if ui.button("💾 Save Snapshot").clicked() {
                         self.save_snapshot_to_disk();
                         close_menu = true;
                     }
                     ui.separator();
-                    if ui.button("Zoom In").clicked() {
-                        self.apply_zoom_steps(1, "context menu");
-                        close_menu = true;
-                    }
-                    if ui.button("Zoom Out").clicked() {
-                        self.apply_zoom_steps(-1, "context menu");
-                        close_menu = true;
-                    }
-                    if ui.button("Reset Zoom").clicked() {
-                        self.set_active_tab_zoom(self.config.engine.zoom_default, "reset");
-                        close_menu = true;
-                    }
+                    ui.menu_button("🔎 Zoom", |ui| {
+                        if ui.button("➕ Zoom In").clicked() {
+                            self.apply_zoom_steps(1, "context menu");
+                            close_menu = true;
+                        }
+                        if ui.button("➖ Zoom Out").clicked() {
+                            self.apply_zoom_steps(-1, "context menu");
+                            close_menu = true;
+                        }
+                        if ui.button("🔄 Reset Zoom").clicked() {
+                            self.set_active_tab_zoom(self.config.engine.zoom_default, "reset");
+                            close_menu = true;
+                        }
+                    });
                 });
             });
 

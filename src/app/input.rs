@@ -213,16 +213,12 @@ impl BrazenApp {
                     let mut handled_shortcut = false;
                     if pressed && is_command {
                         match key {
-                            eframe::egui::Key::C | eframe::egui::Key::X => {
-                                self.engine
-                                    .handle_clipboard(crate::engine::ClipboardRequest::Read);
+                            eframe::egui::Key::C | eframe::egui::Key::X | eframe::egui::Key::V | eframe::egui::Key::A => {
+                                // Let these fall through to the engine so it can handle clipboard/selection internally
+                                // However, we still record the event for shell history
                                 self.shell_state
-                                    .record_event(format!("shortcut {:?} => copy", key));
-                                handled_shortcut = true;
-                            }
-                            eframe::egui::Key::A => {
-                                self.shell_state.record_event("shortcut: select all");
-                                handled_shortcut = true;
+                                    .record_event(format!("shortcut {:?} => engine", key));
+                                handled_shortcut = false; // FALL THROUGH
                             }
                             eframe::egui::Key::F => {
                                 self.shell_state.find_panel_open = true;
@@ -239,7 +235,7 @@ impl BrazenApp {
                                 self.shell_state.record_event("shortcut: focus address bar");
                                 handled_shortcut = true;
                             }
-                            eframe::egui::Key::T => {
+                            eframe::egui::Key::T | eframe::egui::Key::N => {
                                 self.apply_palette_command(PaletteCommand::NewTab);
                                 handled_shortcut = true;
                             }
@@ -314,6 +310,20 @@ impl BrazenApp {
                     if suppress_engine_input {
                         continue;
                     }
+                    
+                    // SKIP single-character text input if it was likely already handled by KeyDown
+                    // This is a common cause of "double typing" in egui/servo integrations.
+                    // We only pass multi-character text (like IME) or special characters.
+                    if text.chars().count() == 1 {
+                        let c = text.chars().next().unwrap();
+                        if c.is_alphanumeric() || c.is_ascii_punctuation() || c == ' ' {
+                            if input_logging {
+                                tracing::trace!(target: "brazen::input", text = %text, "suppressing redundant single-char text input");
+                            }
+                            continue;
+                        }
+                    }
+
                     if input_logging {
                         tracing::trace!(
                             target: "brazen::input",

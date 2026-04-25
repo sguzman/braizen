@@ -15,6 +15,7 @@ use super::handle::AutomationHandle;
 use super::handlers::handle_request;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AutomationServerState {
     pub(crate) handle: AutomationHandle,
     pub(crate) auth_token: Option<String>,
@@ -29,6 +30,7 @@ pub struct AutomationServerState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PendingApproval {
     pub(crate) capability: Capability,
     pub(crate) request: AutomationRequest,
@@ -36,6 +38,7 @@ pub struct PendingApproval {
     pub(crate) client_ip: Option<String>,
 }
 
+#[allow(dead_code)]
 impl AutomationServerState {
     pub fn new(config: AutomationConfig, handle: AutomationHandle, audit_logger: Arc<AuditLogger>) -> Self {
         let max_connections = config.max_connections.max(1) as usize;

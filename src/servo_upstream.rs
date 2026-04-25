@@ -63,6 +63,9 @@ pub struct ServoUpstreamConfig {
     pub resources_dir: Option<PathBuf>,
     pub certificate_path: Option<PathBuf>,
     pub ignore_certificate_errors: bool,
+    pub cookies_path: Option<PathBuf>,
+    pub storage_path: Option<PathBuf>,
+    pub cache_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -372,6 +375,18 @@ impl ServoUpstreamRuntime {
             certificate_path: resolved_certificate_path
                 .as_ref()
                 .map(|path| path.display().to_string()),
+            cookies_path: config
+                .cookies_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            storage_path: config
+                .storage_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            cache_path: config
+                .cache_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
             ..Opts::default()
         };
         let frame_ready = Arc::new(AtomicBool::new(true));
@@ -642,7 +657,11 @@ impl ServoUpstreamRuntime {
             KeyState::Up
         };
         let key_value = if key.len() == 1 {
-            Key::Character(key.to_string())
+            let mut c = key.to_string();
+            if !modifiers.shift {
+                c = c.to_lowercase();
+            }
+            Key::Character(c)
         } else {
             let named = match key {
                 "Enter" => NamedKey::Enter,

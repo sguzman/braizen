@@ -665,13 +665,13 @@ impl EngineFactory for ServoEngineFactory {
     ) -> Box<dyn BrowserEngine> {
         #[cfg(feature = "servo")]
         {
-            Box::new(ServoEngine::new(_config, mount_manager, _session))
+            Box::new(ServoEngine::new(_config, _paths, mount_manager, _session))
         }
 
         #[cfg(not(feature = "servo"))]
         {
             let mut engine = ScaffoldEngine::new();
-            engine.mount_manager = mount_manager;
+            engine._mount_manager = mount_manager;
             Box::new(engine)
         }
     }
@@ -707,6 +707,7 @@ pub struct ServoEngine {
 impl ServoEngine {
     pub fn new(
         config: &BrazenConfig,
+        paths: &RuntimePaths,
         mount_manager: crate::mounts::MountManager,
         session: Arc<RwLock<SessionSnapshot>>,
     ) -> Self {
@@ -729,7 +730,7 @@ impl ServoEngine {
         };
 
         let embedder_config = ServoEmbedderConfig::from_brazen_config(config);
-        let mut embedder = ServoEmbedder::new(embedder_config, mount_manager, session);
+        let mut embedder = ServoEmbedder::new(embedder_config, mount_manager, session, paths.clone());
         let verbose_logging = config.engine.verbose_logging;
         embedder.set_verbose_logging(verbose_logging);
         if let Err(error) = embedder.init() {

@@ -1,8 +1,7 @@
-use chrono::Utc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use crate::cache::{AssetMetadata, AssetQuery, CacheStats};
+use crate::cache::{AssetQuery, CacheStats};
 use crate::engine::EngineFrame;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

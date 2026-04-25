@@ -5,11 +5,10 @@ use base64::Engine;
 use image::ImageFormat;
 use std::io::Cursor;
 use crate::audit_log::AuditEntry;
-use crate::cache::{AssetQuery, AssetStore};
-use crate::permissions::Capability;
+use crate::cache::AssetStore;
 use crate::engine::PixelFormat;
 use super::types::*;
-use super::server::{AutomationServerState, PendingApproval};
+use super::server::AutomationServerState;
 
 pub async fn handle_request(
     state: &AutomationServerState,

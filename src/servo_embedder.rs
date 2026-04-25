@@ -233,6 +233,7 @@ pub struct ServoEmbedder {
     #[cfg(feature = "servo-upstream")]
     pub upstream_event_rx: Option<std::sync::mpsc::Receiver<crate::engine::EngineEvent>>,
     pub session: Arc<RwLock<crate::session::SessionSnapshot>>,
+    pub runtime_paths: crate::platform_paths::RuntimePaths,
 }
 
 impl std::fmt::Debug for ServoEmbedder {
@@ -250,6 +251,7 @@ impl ServoEmbedder {
         config: ServoEmbedderConfig,
         mount_manager: crate::mounts::MountManager,
         session: Arc<RwLock<crate::session::SessionSnapshot>>,
+        runtime_paths: crate::platform_paths::RuntimePaths,
     ) -> Self {
         Self {
             state: ServoEmbedderState::Uninitialized,
@@ -287,6 +289,7 @@ impl ServoEmbedder {
             #[cfg(feature = "servo-upstream")]
             upstream_event_rx: None,
             session,
+            runtime_paths,
         }
     }
 
@@ -754,6 +757,9 @@ impl ServoEmbedder {
             resources_dir: self.config.resources_dir.clone(),
             certificate_path: self.config.certificate_path.clone(),
             ignore_certificate_errors: self.config.ignore_certificate_errors,
+            cookies_path: Some(self.runtime_paths.active_profile_dir.join("cookies")),
+            storage_path: Some(self.runtime_paths.active_profile_dir.join("storage")),
+            cache_path: Some(self.runtime_paths.cache_dir.clone()),
         };
         let (tx, rx) = std::sync::mpsc::channel();
         self.upstream_event_tx = Some(tx.clone());

@@ -10,6 +10,7 @@ use crate::session::SessionSnapshot;
 use super::types::*;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AutomationHandle {
     pub(crate) snapshot: Arc<RwLock<AutomationSnapshot>>,
     pub(crate) command_tx: mpsc::UnboundedSender<AutomationCommand>,
