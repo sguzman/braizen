@@ -8,9 +8,13 @@ use crate::navigation::{normalize_url_input};
 impl super::BrazenApp {
     pub fn render_browser_view(&mut self, ctx: &eframe::egui::Context) {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
-            // Determine sizing and get a response object
+            let available = ui.available_size();
             let (rect, _response_opt) = if let Some(texture) = &self.render_texture {
-                let response = ui.add(eframe::egui::Image::from_texture(texture).shrink_to_fit());
+                let response = ui.add(
+                    eframe::egui::Image::from_texture(texture)
+                        .fit_to_exact_size(available)
+                        .max_size(available),
+                );
                 (response.rect, Some(response))
             } else {
                 // Initial placeholder to get a rect and trigger first frame
@@ -237,7 +241,7 @@ impl super::BrazenApp {
         }
         eframe::egui::SidePanel::right("right_panel")
             .resizable(true)
-            .width_range(240.0..=600.0)
+            .width_range(240.0..=480.0)
             .default_width(320.0)
             .show(ctx, |ui| {
                 ui.add_space(8.0);

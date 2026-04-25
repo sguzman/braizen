@@ -156,10 +156,9 @@ impl super::BrazenApp {
 
         eframe::egui::TopBottomPanel::bottom("unified_bottom_panel")
             .resizable(true)
+            .min_height(100.0)
             .default_height(self.panels.bottom_panel_height)
             .show(ctx, |ui| {
-                // Update persisted height
-                self.panels.bottom_panel_height = ui.available_height().max(100.0);
 
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Logs, "Logs");
@@ -182,6 +181,7 @@ impl super::BrazenApp {
 
                 eframe::egui::ScrollArea::vertical()
                     .id_salt("bottom_panel_scroll")
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
                         match self.panels.active_diagnostic_tab {
                             DiagnosticTab::Logs => self.render_log_tab(ui),
