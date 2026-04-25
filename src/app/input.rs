@@ -211,54 +211,67 @@ impl BrazenApp {
                 } => {
                     let is_command = modifiers.ctrl || modifiers.command;
                     let mut handled_shortcut = false;
+                    
+                    // Helper to check if a key event matches a shortcut string (e.g. "Control+A")
+                    let matches_shortcut = |shortcut: &str, key: &eframe::egui::Key, modifiers: &eframe::egui::Modifiers| -> bool {
+                        let parts: Vec<&str> = shortcut.split('+').collect();
+                        if parts.len() < 2 { return false; }
+                        let mut matches_modifiers = true;
+                        for part in &parts[..parts.len()-1] {
+                            match part.to_lowercase().as_str() {
+                                "control" | "ctrl" => matches_modifiers &= modifiers.ctrl || modifiers.command,
+                                "shift" => matches_modifiers &= modifiers.shift,
+                                "alt" => matches_modifiers &= modifiers.alt,
+                                _ => {}
+                            }
+                        }
+                        let key_name = parts.last().unwrap().to_lowercase();
+                        let matches_key = format!("{:?}", key).to_lowercase() == key_name;
+                        matches_modifiers && matches_key
+                    };
+
                     if pressed && is_command {
-                        match key {
-                            eframe::egui::Key::A => {
-                                self.engine.select_all();
-                                self.shell_state.record_event("shortcut: select all");
-                                handled_shortcut = true;
+                        let config = &self.config.shortcuts;
+                        
+                        if matches_shortcut(&config.select_all, &key, &modifiers) {
+                            self.engine.select_all();
+                            self.shell_state.record_event("shortcut: select all");
+                            handled_shortcut = true;
+                        } else if matches_shortcut(&config.copy, &key, &modifiers) {
+                            self.shell_state.record_event("shortcut: copy");
+                        } else if matches_shortcut(&config.paste, &key, &modifiers) {
+                            self.shell_state.record_event("shortcut: paste");
+                        } else {
+                            match key {
+                                eframe::egui::Key::F => {
+                                    self.shell_state.find_panel_open = true;
+                                    self.shell_state.record_event("shortcut: find");
+                                    handled_shortcut = true;
+                                }
+                                eframe::egui::Key::K => {
+                                    self.open_command_palette();
+                                    self.shell_state.record_event("shortcut: command palette");
+                                    handled_shortcut = true;
+                                }
+                                eframe::egui::Key::L => {
+                                    self.address_bar_focus_pending = true;
+                                    self.shell_state.record_event("shortcut: focus address bar");
+                                    handled_shortcut = true;
+                                }
+                                eframe::egui::Key::T | eframe::egui::Key::N => {
+                                    self.apply_palette_command(PaletteCommand::NewTab);
+                                    handled_shortcut = true;
+                                }
+                                eframe::egui::Key::W => {
+                                    self.apply_palette_command(PaletteCommand::CloseTab);
+                                    handled_shortcut = true;
+                                }
+                                eframe::egui::Key::R => {
+                                    self.apply_palette_command(PaletteCommand::Reload);
+                                    handled_shortcut = true;
+                                }
+                                _ => {}
                             }
-                            eframe::egui::Key::C => {
-                                // Servo handles copy internally if we pass the key event, 
-                                // but we ensure it falls through.
-                                self.shell_state.record_event("shortcut: copy");
-                            }
-                            eframe::egui::Key::V => {
-                                // For paste, we might need to read the clipboard and send TextInput
-                                // but Servo also handles it if we pass the key event.
-                                self.shell_state.record_event("shortcut: paste");
-                            }
-                            eframe::egui::Key::X => {
-                                self.shell_state.record_event("shortcut: cut");
-                            }
-                            eframe::egui::Key::F => {
-                                self.shell_state.find_panel_open = true;
-                                self.shell_state.record_event("shortcut: find");
-                                handled_shortcut = true;
-                            }
-                            eframe::egui::Key::K => {
-                                self.open_command_palette();
-                                self.shell_state.record_event("shortcut: command palette");
-                                handled_shortcut = true;
-                            }
-                            eframe::egui::Key::L => {
-                                self.address_bar_focus_pending = true;
-                                self.shell_state.record_event("shortcut: focus address bar");
-                                handled_shortcut = true;
-                            }
-                            eframe::egui::Key::T | eframe::egui::Key::N => {
-                                self.apply_palette_command(PaletteCommand::NewTab);
-                                handled_shortcut = true;
-                            }
-                            eframe::egui::Key::W => {
-                                self.apply_palette_command(PaletteCommand::CloseTab);
-                                handled_shortcut = true;
-                            }
-                            eframe::egui::Key::R => {
-                                self.apply_palette_command(PaletteCommand::Reload);
-                                handled_shortcut = true;
-                            }
-                            _ => {}
                         }
                     }
                     let zoom_shortcut = pressed
