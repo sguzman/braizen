@@ -344,14 +344,10 @@ impl BrazenApp {
                         tracing::trace!(target: "brazen::input", text = %text, "text input event received");
                     }
                     
-                    // SUPPRESS single-character text input to avoid "double typing".
-                    // Servo's KeyboardEvent (KeyDown) already handles printable characters.
-                    if text.chars().count() == 1 {
-                        if input_logging {
-                            tracing::trace!(target: "brazen::input", text = %text, "suppressing single-char text input to avoid duplication in engine");
-                        }
-                        continue;
-                    }
+                    // We used to suppress single characters here to avoid double typing,
+                    // but we now handle this more robustly in the engine runtime by sending
+                    // Key::Unidentified for printable keys in KeyDown, relying on this event
+                    // for the actual character insertion.
 
                     if input_logging {
                         tracing::trace!(

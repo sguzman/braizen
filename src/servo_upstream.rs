@@ -382,7 +382,17 @@ impl ServoUpstreamRuntime {
         let mut opts = libservo::Opts::default();
         opts.ignore_certificate_errors = config.ignore_certificate_errors;
         opts.certificate_path = resolved_certificate_path.as_ref().map(|p| p.display().to_string());
-        opts.config_dir = config.storage_path.as_ref().and_then(|p| p.parent().map(|p| p.to_path_buf()));
+        
+        // Ensure config_dir is set to the profile directory
+        if let Some(storage_path) = &config.storage_path {
+            if let Some(parent) = storage_path.parent() {
+                opts.config_dir = Some(parent.to_path_buf());
+                tracing::info!(target: "brazen::servo::init", path = ?parent, "servo config directory set");
+            }
+        }
+        
+        // Explicitly set cookie path if available in libservo::Opts
+        // opts.cookies_path = config.cookies_path.clone(); // Not supported in this version of libservo::Opts
 
         // Set preferences
         let mut preferences = prefs::get().clone();
@@ -680,7 +690,20 @@ impl ServoUpstreamRuntime {
             if !modifiers.shift {
                 c = c.to_lowercase();
             }
-            Key::Character(c)
+            
+            // Fix for "Double Typing":
+            // Servo handles both KeyboardEvent (KeyDown) and ImeComposition/TextInput.
+            // If we send a Key::Character in KeyDown, Servo often inserts it immediately.
+            // To avoid duplication with TextInput (which handles IME and non-Latin layouts better),
+            // we send Key::Unidentified for printable characters in KeyDown, 
+            // EXCEPT when a modifier like Ctrl/Alt is pressed (where we need the character for shortcuts).
+            
+            if !modifiers.ctrl && !modifiers.alt && !modifiers.command {
+                tracing::trace!(target: "brazen::servo::input", key = %c, "sending Key::Unidentified for printable char to avoid double typing");
+                Key::Named(NamedKey::Unidentified)
+            } else {
+                Key::Character(c)
+            }
         } else {
             let named = match key {
                 "Enter" => NamedKey::Enter,
@@ -705,7 +728,12 @@ impl ServoUpstreamRuntime {
                 _ => NamedKey::Unidentified,
             };
             if key == "Space" {
-                Key::Character(" ".to_string())
+                if !modifiers.ctrl && !modifiers.alt && !modifiers.command {
+                    tracing::trace!(target: "brazen::servo::input", "sending Key::Unidentified for Space to avoid double typing");
+                    Key::Named(NamedKey::Unidentified)
+                } else {
+                    Key::Character(" ".to_string())
+                }
             } else {
                 Key::Named(named)
             }
