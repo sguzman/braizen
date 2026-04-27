@@ -1014,6 +1014,7 @@ impl BrowserEngine for ServoEngine {
                 self.navigation_state.title = self.embedder.browser_state.title.clone();
                 self.navigation_state.metadata_summary = Some("Document ready".to_string());
                 self.navigation_state.favicon_url = self.embedder.browser_state.favicon_url.clone();
+                self.navigation_state.load_status = Some(EngineLoadStatus::Complete);
                 self.loading = false;
             }
             self.events.push(EngineEvent::NavigationStateUpdated(

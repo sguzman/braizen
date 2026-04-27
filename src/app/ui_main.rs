@@ -73,8 +73,6 @@ impl super::BrazenApp {
 impl eframe::App for super::BrazenApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         self.ensure_engine_initialized(ctx);
-        self.forward_input_events(ctx);
-        self.update_render_frame(ctx);
         self.shell_state.sync_from_engine(self.engine.as_mut());
         if let Some(handle) = &self.automation_handle {
             handle.set_egui_context(ctx.clone());
@@ -118,6 +116,10 @@ impl eframe::App for super::BrazenApp {
 
         self.render_command_palette(ctx);
         self.render_context_menu(ctx);
+
+        // Process inputs and render frame after UI layout is stabilized
+        self.forward_input_events(ctx);
+        self.update_render_frame(ctx);
     }
 }
 

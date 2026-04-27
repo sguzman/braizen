@@ -135,60 +135,61 @@ impl BrazenApp {
                             x: local.x,
                             y: local.y,
                         });
-                    }
-                    let modifiers = input.modifiers;
-                    let axis = if delta.y.abs() >= delta.x.abs() {
-                        delta.y
-                    } else {
-                        delta.x
-                    };
-                    if modifiers.ctrl || modifiers.command {
-                        let steps = if axis.abs() < 0.1 {
-                            0
+
+                        let modifiers = input.modifiers;
+                        let axis = if delta.y.abs() >= delta.x.abs() {
+                            delta.y
                         } else {
-                            axis.signum() as i32
+                            delta.x
                         };
-                        if steps != 0 {
-                            self.apply_zoom_steps(steps, "wheel");
+                        if modifiers.ctrl || modifiers.command {
+                            let steps = if axis.abs() < 0.1 {
+                                0
+                            } else {
+                                axis.signum() as i32
+                            };
+                            if steps != 0 {
+                                self.apply_zoom_steps(steps, "wheel");
+                            }
+                            if input_logging {
+                                tracing::trace!(
+                                    target: "brazen::input",
+                                    axis,
+                                    steps,
+                                    "ctrl wheel zoom"
+                                );
+                            }
+                            continue;
                         }
+                        let mut delta_x = delta.x;
+                        let mut delta_y = delta.y;
+                        if modifiers.shift {
+                            delta_x = if delta.x.abs() > 0.0 {
+                                delta.x
+                            } else {
+                                delta.y
+                            };
+                            delta_y = 0.0;
+                        }
+                        let scale = match unit {
+                            eframe::egui::MouseWheelUnit::Line => 24.0,
+                            eframe::egui::MouseWheelUnit::Point => 1.0,
+                            eframe::egui::MouseWheelUnit::Page => 240.0,
+                        };
+                        delta_x *= scale;
+                        delta_y *= scale;
                         if input_logging {
                             tracing::trace!(
                                 target: "brazen::input",
-                                axis,
-                                steps,
-                                "ctrl wheel zoom"
+                                delta_x,
+                                delta_y,
+                                unit = ?unit,
+                                "scroll wheel"
                             );
                         }
-                        continue;
+                        self.engine
+                            .handle_input(InputEvent::Scroll { delta_x, delta_y });
                     }
-                    let mut delta_x = delta.x;
-                    let mut delta_y = delta.y;
-                    if modifiers.shift {
-                        delta_x = if delta.x.abs() > 0.0 {
-                            delta.x
-                        } else {
-                            delta.y
-                        };
-                        delta_y = 0.0;
-                    }
-                    let scale = match unit {
-                        eframe::egui::MouseWheelUnit::Line => 24.0,
-                        eframe::egui::MouseWheelUnit::Point => 1.0,
-                        eframe::egui::MouseWheelUnit::Page => 240.0,
-                    };
-                    delta_x *= scale;
-                    delta_y *= scale;
-                    if input_logging {
-                        tracing::trace!(
-                            target: "brazen::input",
-                            delta_x,
-                            delta_y,
-                            unit = ?unit,
-                            "scroll wheel"
-                        );
-                    }
-                    self.engine
-                        .handle_input(InputEvent::Scroll { delta_x, delta_y });
                 }
                 eframe::egui::Event::Zoom(delta) => {
                     if (delta - 1.0).abs() > f32::EPSILON {
