@@ -206,10 +206,11 @@ impl super::BrazenApp {
         if !self.panels.sidebar_visible {
             return;
         }
+        let max_width = ctx.available_rect().width() * 0.4;
         eframe::egui::SidePanel::left("left_sidebar")
             .resizable(true)
-            .width_range(200.0..=500.0)
-            .default_width(260.0)
+            .width_range(150.0..=max_width)
+            .default_width(260.0_f32.min(max_width))
             .show(ctx, |ui| {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
@@ -278,10 +279,11 @@ impl super::BrazenApp {
         if !self.panels.terminal {
             return;
         }
+        let max_width = ctx.available_rect().width() * 0.4;
         eframe::egui::SidePanel::right("right_panel")
             .resizable(true)
-            .width_range(240.0..=480.0)
-            .default_width(320.0)
+            .width_range(150.0..=max_width)
+            .default_width(320.0_f32.min(max_width))
             .show(ctx, |ui| {
                 ui.add_space(8.0);
                 ui.heading("💻 Terminal");

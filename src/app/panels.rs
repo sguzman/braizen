@@ -154,12 +154,15 @@ impl super::BrazenApp {
             return;
         }
 
+        let available_height = ctx.available_rect().height();
+        let max_height = available_height * 0.8;
+        let clamped_height = self.panels.bottom_panel_height.clamp(100.0, max_height);
+
         let inner_response = eframe::egui::TopBottomPanel::bottom("unified_bottom_panel")
             .resizable(true)
-            .min_height(100.0)
-            .default_height(self.panels.bottom_panel_height)
+            .height_range(100.0..=max_height)
+            .default_height(clamped_height)
             .show(ctx, |ui| {
-                ui.set_min_height(self.panels.bottom_panel_height);
 
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.panels.active_diagnostic_tab, DiagnosticTab::Logs, "Logs");
