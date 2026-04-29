@@ -489,6 +489,32 @@ impl ServoEmbedder {
         }
     }
 
+    pub fn copy(&mut self) {
+        #[cfg(feature = "servo-upstream")]
+        if let Some(upstream) = &self.upstream {
+            upstream.copy();
+        }
+    }
+
+    pub fn paste(&mut self) {
+        #[cfg(feature = "servo-upstream")]
+        if let Some(upstream) = &self.upstream {
+            upstream.paste();
+        }
+    }
+
+    pub fn scroll_info(&self) -> Option<crate::engine::ScrollInfo> {
+        #[cfg(feature = "servo-upstream")]
+        if let Some(snapshot) = &self.last_snapshot {
+            return Some(crate::engine::ScrollInfo {
+                scroll_pos: snapshot.scroll_pos,
+                content_size: snapshot.content_size,
+                viewport_size: snapshot.viewport_size,
+            });
+        }
+        None
+    }
+
     pub fn handle_input(&mut self, event: &InputEvent) {
         if self.verbose_logging {
             tracing::trace!(target: "brazen::servo", ?event, "input forwarded");
@@ -566,6 +592,7 @@ impl ServoEmbedder {
                         self.last_pointer.0,
                         self.last_pointer.1,
                     );
+                    upstream.update_scroll_info();
                 }
                 #[cfg(not(feature = "servo-upstream"))]
                 let _ = (delta_x, delta_y);
@@ -760,6 +787,7 @@ impl ServoEmbedder {
             pixel_format: self.config.pixel_format,
             alpha_mode: self.config.alpha_mode,
             color_space: self.config.color_space,
+            scale_factor: surface.metadata.scale_factor_basis_points as f32 / 100.0,
             enable_pixel_probe: self.config.enable_pixel_probe,
             resources_dir: self.config.resources_dir.clone(),
             certificate_path: self.config.certificate_path.clone(),

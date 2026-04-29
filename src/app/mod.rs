@@ -564,7 +564,7 @@ impl BrazenApp {
                     self.load_status_started_at = Some(Instant::now());
                 }
                 if let Some(started_at) = self.load_status_started_at
-                    && started_at.elapsed() >= Duration::from_secs(10)
+                    && started_at.elapsed() >= Duration::from_secs(30)
                     && !self.load_status_warned
                 {
                     self.load_status_warned = true;

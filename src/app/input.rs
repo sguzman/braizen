@@ -235,14 +235,17 @@ impl BrazenApp {
                         let config = &self.config.shortcuts;
                         
                         if matches_shortcut(&config.select_all, &key, &modifiers) {
+                            tracing::info!(target: "brazen::input", "SHORTCUT: select all detected");
                             self.engine.select_all();
                             self.shell_state.record_event("shortcut: select all");
                             handled_shortcut = true;
                         } else if matches_shortcut(&config.copy, &key, &modifiers) {
+                            tracing::info!(target: "brazen::input", "SHORTCUT: copy detected");
                             self.engine.copy();
                             self.shell_state.record_event("shortcut: copy");
                             handled_shortcut = true;
                         } else if matches_shortcut(&config.paste, &key, &modifiers) {
+                            tracing::info!(target: "brazen::input", "SHORTCUT: paste detected");
                             self.engine.paste();
                             self.shell_state.record_event("shortcut: paste");
                             handled_shortcut = true;

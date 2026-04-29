@@ -9,6 +9,13 @@ use crate::servo_embedder::{ServoEmbedder, ServoEmbedderConfig};
 
 pub type EngineInstanceId = u64;
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScrollInfo {
+    pub scroll_pos: (f32, f32),
+    pub content_size: (f32, f32),
+    pub viewport_size: (f32, f32),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusState {
     Focused,
@@ -380,6 +387,9 @@ pub trait BrowserEngine {
     fn take_screenshot(&mut self) -> Result<EngineFrame, String>;
     fn health(&self) -> RenderHealth;
     fn select_all(&mut self);
+    fn copy(&mut self);
+    fn paste(&mut self);
+    fn scroll_info(&self) -> Option<ScrollInfo>;
 }
 
 
@@ -642,6 +652,12 @@ impl BrowserEngine for ScaffoldEngine {
     }
 
     fn select_all(&mut self) {}
+    fn copy(&mut self) {}
+    fn paste(&mut self) {}
+
+    fn scroll_info(&self) -> Option<ScrollInfo> {
+        None
+    }
 }
 use std::sync::{Arc, RwLock};
 use crate::session::SessionSnapshot;
@@ -1137,5 +1153,15 @@ impl BrowserEngine for ServoEngine {
     }
     fn select_all(&mut self) {
         self.embedder.select_all();
+    }
+    fn copy(&mut self) {
+        self.embedder.copy();
+    }
+    fn paste(&mut self) {
+        self.embedder.paste();
+    }
+
+    fn scroll_info(&self) -> Option<ScrollInfo> {
+        self.embedder.scroll_info()
     }
 }

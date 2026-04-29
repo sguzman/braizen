@@ -43,6 +43,9 @@ pub struct UpstreamSnapshot {
     pub history_index: usize,
     pub animating: bool,
     pub last_error: Option<String>,
+    pub scroll_pos: (f32, f32),
+    pub content_size: (f32, f32),
+    pub viewport_size: (f32, f32),
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +64,7 @@ pub struct ServoUpstreamConfig {
     pub pixel_format: PixelFormat,
     pub alpha_mode: AlphaMode,
     pub color_space: ColorSpace,
+    pub scale_factor: f32,
     pub enable_pixel_probe: bool,
     pub resources_dir: Option<PathBuf>,
     pub certificate_path: Option<PathBuf>,
@@ -88,6 +92,9 @@ impl Default for UpstreamSnapshot {
             history_index: 0,
             animating: false,
             last_error: None,
+            scroll_pos: (0.0, 0.0),
+            content_size: (0.0, 0.0),
+            viewport_size: (0.0, 0.0),
         }
     }
 }
@@ -319,6 +326,7 @@ pub struct ServoUpstreamRuntime {
     resource_source: ResourceDirSource,
     pending_clipboard_request: Arc<std::sync::Mutex<Option<StringRequest>>>,
     event_sender: std::sync::mpsc::Sender<EngineEvent>,
+    scale_factor: f32,
 }
 
 impl std::fmt::Debug for ServoUpstreamRuntime {
@@ -437,6 +445,7 @@ impl ServoUpstreamRuntime {
             pending_clipboard_request.clone(),
         ));
         let webview = WebViewBuilder::new(&servo, rendering_context.clone())
+            .hidpi_scale_factor(libservo::Scale::new(config.scale_factor))
             .delegate(delegate)
             .clipboard_delegate(clipboard_delegate)
             .build();
@@ -480,6 +489,7 @@ impl ServoUpstreamRuntime {
             resource_source: source,
             pending_clipboard_request,
             event_sender,
+            scale_factor: config.scale_factor,
         })
     }
 
@@ -511,12 +521,74 @@ impl ServoUpstreamRuntime {
     }
 
     pub fn select_all(&self) {
+        tracing::info!(target: "brazen::servo", "UPSTREAM: select_all executed");
         let script = "document.execCommand('selectAll', false, null);".to_string();
         let webview_id = self.webview.id();
         self.servo.javascript_evaluator_mut().evaluate(
             webview_id,
             script,
             Box::new(|_| {}),
+        );
+    }
+
+    pub fn copy(&self) {
+        tracing::info!(target: "brazen::servo", "UPSTREAM: copy executed");
+        let script = "document.execCommand('copy', false, null);".to_string();
+        let webview_id = self.webview.id();
+        self.servo.javascript_evaluator_mut().evaluate(
+            webview_id,
+            script,
+            Box::new(|_| {}),
+        );
+    }
+
+    pub fn paste(&self) {
+        tracing::info!(target: "brazen::servo", "UPSTREAM: paste executed");
+        let script = "document.execCommand('paste', false, null);".to_string();
+        let webview_id = self.webview.id();
+        self.servo.javascript_evaluator_mut().evaluate(
+            webview_id,
+            script,
+            Box::new(|_| {}),
+        );
+    }
+
+    pub fn update_scroll_info(&self) {
+        let script = "JSON.stringify({
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            contentWidth: document.documentElement.scrollWidth,
+            contentHeight: document.documentElement.scrollHeight,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight
+        })".to_string();
+        
+        let snapshot = self.snapshot.clone();
+        let webview_id = self.webview.id();
+        self.servo.javascript_evaluator_mut().evaluate(
+            webview_id,
+            script,
+            Box::new(move |res| {
+                if let Ok(val) = res {
+                    if let libservo::JSValue::String(s) = val {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&s) {
+                            let mut snap = snapshot.borrow_mut();
+                            snap.scroll_pos = (
+                                json["scrollX"].as_f64().unwrap_or(0.0) as f32,
+                                json["scrollY"].as_f64().unwrap_or(0.0) as f32
+                            );
+                            snap.content_size = (
+                                json["contentWidth"].as_f64().unwrap_or(0.0) as f32,
+                                json["contentHeight"].as_f64().unwrap_or(0.0) as f32
+                            );
+                            snap.viewport_size = (
+                                json["viewportWidth"].as_f64().unwrap_or(0.0) as f32,
+                                json["viewportHeight"].as_f64().unwrap_or(0.0) as f32
+                            );
+                        }
+                    }
+                }
+            }),
         );
     }
 
@@ -620,8 +692,9 @@ impl ServoUpstreamRuntime {
     }
 
     pub fn handle_mouse_move(&self, x: f32, y: f32) {
+        let scale = self.scale_factor;
         self.handle_input(InputEvent::MouseMove(MouseMoveEvent::new(
-            WebViewPoint::Device(DevicePoint::new(x, y)),
+            WebViewPoint::Device(DevicePoint::new(x * scale, y * scale)),
         )));
     }
 
@@ -631,10 +704,11 @@ impl ServoUpstreamRuntime {
         } else {
             MouseButtonAction::Up
         };
+        let scale = self.scale_factor;
         self.handle_input(InputEvent::MouseButton(MouseButtonEvent::new(
             action,
             MouseButton::from(button),
-            WebViewPoint::Device(DevicePoint::new(x, y)),
+            WebViewPoint::Device(DevicePoint::new(x * scale, y * scale)),
         )));
     }
 
@@ -651,9 +725,10 @@ impl ServoUpstreamRuntime {
             z: 0.0,
             mode: WheelMode::DeltaPixel,
         };
+        let scale = self.scale_factor;
         self.handle_input(InputEvent::Wheel(WheelEvent::new(
             delta,
-            WebViewPoint::Device(DevicePoint::new(x, y)),
+            WebViewPoint::Device(DevicePoint::new(x * scale, y * scale)),
         )));
     }
 

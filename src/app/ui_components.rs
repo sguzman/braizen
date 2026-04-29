@@ -38,7 +38,9 @@ fn beautify_url(url: &str) -> String {
 
 impl super::BrazenApp {
     pub fn render_browser_view(&mut self, ctx: &eframe::egui::Context) {
-        eframe::egui::CentralPanel::default().show(ctx, |ui| {
+        eframe::egui::CentralPanel::default()
+            .frame(eframe::egui::Frame::central_panel(&ctx.style()).inner_margin(8.0))
+            .show(ctx, |ui| {
             let available = ui.available_size();
             let available = eframe::egui::vec2(available.x.floor(), available.y.floor());
             let (rect, _response_opt) = if let Some(texture) = &self.render_texture {
@@ -80,6 +82,11 @@ impl super::BrazenApp {
 
             self.render_viewport_rect = Some(rect);
                 
+            // Draw Scrollbar Overlay
+            if let Some(scroll_info) = self.engine.scroll_info() {
+                self.render_scrollbar(ui, rect, &scroll_info);
+            }
+
             // Scaffold Mode Overlay
             if self.shell_state.backend_name == "scaffold" {
                 let painter = ui.painter().with_clip_rect(rect);
@@ -602,5 +609,35 @@ impl super::BrazenApp {
         if close_menu {
             self.shell_state.pending_context_menu = None;
         }
+    }
+
+    fn render_scrollbar(&self, ui: &mut eframe::egui::Ui, rect: eframe::egui::Rect, info: &crate::engine::ScrollInfo) {
+        if info.content_size.1 <= info.viewport_size.1 || info.viewport_size.1 <= 0.0 {
+            return;
+        }
+
+        let bar_width = 6.0;
+        let bar_bg_color = eframe::egui::Color32::from_black_alpha(30);
+        let bar_handle_color = eframe::egui::Color32::from_white_alpha(100);
+
+        let max_scroll = (info.content_size.1 - info.viewport_size.1).max(1.0);
+        let scroll_ratio = (info.scroll_pos.1 / max_scroll).clamp(0.0, 1.0);
+        let handle_height_ratio = (info.viewport_size.1 / info.content_size.1).clamp(0.1, 1.0);
+        let handle_height = rect.height() * handle_height_ratio;
+        let handle_top = (rect.height() - handle_height) * scroll_ratio;
+
+        let bar_rect = eframe::egui::Rect::from_min_size(
+            rect.right_top() - eframe::egui::vec2(bar_width + 4.0, 0.0),
+            eframe::egui::vec2(bar_width, rect.height()),
+        );
+
+        let handle_rect = eframe::egui::Rect::from_min_size(
+            bar_rect.left_top() + eframe::egui::vec2(0.0, handle_top),
+            eframe::egui::vec2(bar_width, handle_height),
+        );
+
+        let painter = ui.painter().with_clip_rect(rect);
+        painter.rect_filled(bar_rect, 3.0, bar_bg_color);
+        painter.rect_filled(handle_rect, 3.0, bar_handle_color);
     }
 }
